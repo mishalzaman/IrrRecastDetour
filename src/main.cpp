@@ -202,8 +202,8 @@ int main() {
 
     // Variables for movement
     std::vector<vector3df> currentPath;
-    int currentPathIndex = 0;
-    float moveSpeed = 5.0f; // units per second
+    size_t currentPathIndex = 0;
+    float moveSpeed = 9.0f; // units per second (adjust for desired speed)
     bool isMoving = false;
 
     /* ===============================
@@ -231,6 +231,38 @@ int main() {
             u32 currentTime = device->getTimer()->getTime();
             f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
             lastTime = currentTime;
+
+            // Movement logic - add this after deltaTime calculation
+            if (isMoving && currentPathIndex < currentPath.size()) {
+                vector3df currentPos = sphere->getPosition();
+                vector3df targetPos = currentPath[currentPathIndex] + vector3df(0, 0.5f, 0);
+
+                // Calculate direction and distance
+                vector3df direction = targetPos - currentPos;
+                float distance = direction.getLength();
+
+                if (distance < 0.1f) {
+                    // Reached waypoint, move to next
+                    currentPathIndex++;
+                    if (currentPathIndex >= currentPath.size()) {
+                        isMoving = false;
+                        std::cout << "Reached destination!" << std::endl;
+                    }
+                }
+                else {
+                    // Move towards waypoint
+                    direction.normalize();
+                    vector3df movement = direction * moveSpeed * deltaTime;
+
+                    // Don't overshoot the waypoint
+                    if (movement.getLength() > distance) {
+                        sphere->setPosition(targetPos);
+                    }
+                    else {
+                        sphere->setPosition(currentPos + movement);
+                    }
+                }
+            }
 
 			// Mouse click handling for pathfinding
             if (inputEventReceiver.wasMouseClicked()) {
@@ -275,11 +307,13 @@ int main() {
                         // Calculate the path and store it in the member variable 'currentPath'
                         currentPath = pathfinding->getPath(startPos, intersectionPoint);
 
-                        if (currentPath.back().getLength() != 0) {
-                            // Move the sphere to the intersection point
-                            sphere->setPosition(currentPath.back() + core::vector3df(0, 0.5f, 0));
+                        if (!currentPath.empty()) {
+                            currentPathIndex = 0;
+                            isMoving = true;
 
-                            std::cout << "Sphere destination on path: "
+                            std::cout << "Path calculated with " << currentPath.size()
+                                << " waypoints. Starting movement..." << std::endl;
+                            std::cout << "Destination: "
                                 << currentPath.back().X << ", "
                                 << currentPath.back().Y << ", "
                                 << currentPath.back().Z << std::endl;
