@@ -62,8 +62,8 @@ void ai_Pathfinding::renderDebugPath(std::vector<irr::core::vector3df> path, vid
         m.Lighting = false;
         driver->setMaterial(m);
         driver->setTransform(video::ETS_WORLD, core::matrix4());
-        core::vector3df n1 = core::vector3df(path[i].X, path[i].Y + 0.1, path[i].Z);
-        core::vector3df n2 = core::vector3df(path[i + 1].X, path[i + 1].Y + 0.1, path[i + 1].Z);
+        core::vector3df n1 = core::vector3df(path[i].X, path[i].Y, path[i].Z);
+        core::vector3df n2 = core::vector3df(path[i + 1].X, path[i + 1].Y, path[i + 1].Z);
         driver->draw3DLine(n1, n2, video::SColor(255, 0, 0, 255));
     };
 }

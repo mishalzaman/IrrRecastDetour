@@ -99,11 +99,23 @@ int main() {
 
     // Add camera - positioned closer to see the mesh better
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
-        0,/// parent node (0 = root/no parent)
-        vector3df(0, 12, 0),// position: Directly above the origin (Y=20)
-        vector3df(0, 0, 0)// target: Looking down at the origin
+        0,
+        vector3df(0, 14, 0),    // position: Directly above the origin
+        vector3df(0, 0, 0)       // target: Looking down at the origin
     );
     camera->setUpVector(vector3df(0, 0, 1));
+
+    // Set up orthographic projection
+    core::matrix4 projMat;
+    f32 orthoSize = 15.0f;  // Adjust this to control zoom (larger = more visible area)
+    f32 aspect = (f32)windowWidth / (f32)windowHeight;
+    projMat.buildProjectionMatrixOrthoLH(
+        orthoSize * aspect,      // width
+        orthoSize,               // height
+        0.1f,                    // near plane
+        100.0f                   // far plane
+    );
+    camera->setProjectionMatrix(projMat, true);
 
     /* ===============================
     LEVEL MESH SETUP (Moved from Pathfinding)
