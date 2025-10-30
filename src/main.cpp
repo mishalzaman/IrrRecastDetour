@@ -123,25 +123,39 @@ int main() {
         levelNode->setMaterialFlag(EMF_LIGHTING, false);
         // Set its position slightly lower, as requested
         levelNode->setPosition(core::vector3df(0, -0.65f, 0));
+
+        std::cout << "Creating triangle selector..." << std::endl; // Debug message
+        scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
+            levelNode->getMesh(), levelNode, 128
+        );
+
+        if (selector) {
+            levelNode->setTriangleSelector(selector);
+            selector->drop(); // The node now holds a reference, so we can drop ours
+            std::cout << "Triangle selector set successfully." << std::endl; // Debug message
+        }
+        else {
+            std::cerr << "Failed to create triangle selector!" << std::endl; // Debug message
+        }
     }
 
-/* ===============================
-PATHFINDING SETUP
-================================ */
+    /* ===============================
+    PATHFINDING SETUP
+    ================================ */
 
-// Initialize pathfinding system
-ai_Pathfinding* pathfinding = new ai_Pathfinding();
+    // Initialize pathfinding system
+    ai_Pathfinding* pathfinding = new ai_Pathfinding();
 
-std::cout << "Building navigation mesh from levelNode..." << std::endl; // CHANGED
+    std::cout << "Building navigation mesh from levelNode..." << std::endl; // CHANGED
 
-// CHANGED: Pass the existing 'levelNode' instead of the filename
-if (!pathfinding->load(levelNode, smgr)) {
-    std::cerr << "Failed to build navigation mesh!" << std::endl;
-    device->drop();
-    delete pathfinding;
-    return 1;
-}
-std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
+    // CHANGED: Pass the existing 'levelNode' instead of the filename
+    if (!pathfinding->load(levelNode, smgr)) {
+        std::cerr << "Failed to build navigation mesh!" << std::endl;
+        device->drop();
+        delete pathfinding;
+        return 1;
+    }
+    std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
 
     /* ===============================
     SPHERE SETUP
@@ -157,6 +171,10 @@ std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
         sphere->getMaterial(0).AmbientColor = SColor(255, 100, 100, 255);
         sphere->getMaterial(0).EmissiveColor = SColor(255, 50, 50, 150);
     }
+
+    std::cout << "Sphere at position: " << sphere->getPosition().X << ", "
+              << sphere->getPosition().Y << ", "
+		<< sphere->getPosition().Z << std::endl;
 
     // Variables for movement
     std::vector<vector3df> currentPath;
@@ -189,6 +207,52 @@ std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
             u32 currentTime = device->getTimer()->getTime();
             f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
             lastTime = currentTime;
+
+			// Mouse click handling for pathfinding
+            if (inputEventReceiver.wasMouseClicked()) {
+                position2di mousePos = inputEventReceiver.getMousePos();
+
+                // 1. Get the ray from the camera
+                core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
+                    mousePos,
+                    camera
+                );
+
+                // 2. Variables to store the collision result
+                core::vector3df intersectionPoint;
+                core::triangle3df hitTriangle;
+
+                // 3. Perform collision detection against the *entire scene*
+                scene::ISceneNode* hitNode = smgr->getSceneCollisionManager()->getSceneNodeAndCollisionPointFromRay(
+                    ray,
+                    intersectionPoint, // Output: 3D collision point
+                    hitTriangle,       // Output: The triangle that was hit
+                    0                  // Default ID mask (check all)
+                );
+
+                // 4. Check if we hit anything at all
+                if (hitNode) {
+                    // 5. Check if the node we hit was the levelNode
+                    if (hitNode == levelNode) {
+                        std::cout << "Mouse clicked mesh at: "
+                            << intersectionPoint.X << ", "
+                            << intersectionPoint.Y << ", "
+                            << intersectionPoint.Z << std::endl;
+
+                        // Move the sphere to the intersection point
+                        sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
+
+                    }
+                    else {
+                        // We hit a different node (e.g., the sphere)
+                        std::cout << "Mouse clicked on a different node." << std::endl;
+                    }
+                }
+                else {
+                    // The ray didn't hit any node with a triangle selector
+                    std::cout << "Mouse ray missed all nodes." << std::endl;
+                }
+            }
 
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
