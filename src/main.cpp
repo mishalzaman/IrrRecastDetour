@@ -260,11 +260,18 @@ int main() {
                         // Get the sphere's current position *before* moving it
                         core::vector3df startPos = sphere->getPosition();
 
-                        // Move the sphere to the intersection point
-                        sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
-
                         // Calculate the path and store it in the member variable 'currentPath'
                         currentPath = pathfinding->getPath(startPos, intersectionPoint);
+
+                        if (currentPath.back().getLength() != 0) {
+                            // Move the sphere to the intersection point
+                            sphere->setPosition(currentPath.back() + core::vector3df(0, 0.5f, 0));
+
+                            std::cout << "Sphere destination on path: "
+                                << currentPath.back().X << ", "
+                                << currentPath.back().Y << ", "
+                                << currentPath.back().Z << std::endl;
+                        }
                     }
                 } 
                 else {
