@@ -109,6 +109,22 @@ int main() {
     LEVEL MESH SETUP (Moved from Pathfinding)
     ================================ */
 
+    enum
+    {
+        // I use this ISceneNode ID to indicate a scene node that is
+        // not pickable by getSceneNodeAndCollisionPointFromRay()
+        ID_IsNotPickable = 0,
+
+        // I use this flag in ISceneNode IDs to indicate that the
+        // scene node can be picked by ray selection.
+        IDFlag_IsPickable = 1 << 0,
+
+        // I use this flag in ISceneNode IDs to indicate that the
+        // scene node can be highlighted.  In this example, the
+        // homonids can be highlighted, but the level mesh can't.
+        IDFlag_IsHighlightable = 1 << 1
+    };
+
     // 1. Load the mesh data
     scene::IMesh* levelMesh = smgr->getMesh("media/test_map.obj");
     if (!levelMesh) {
@@ -118,11 +134,15 @@ int main() {
     }
 
     // 2. Create the visible scene node for the level
+    scene::ISceneCollisionManager* collMan = nullptr;
+
     scene::IMeshSceneNode* levelNode = smgr->addMeshSceneNode(levelMesh);
     if (levelNode) {
         levelNode->setMaterialFlag(EMF_LIGHTING, false);
         // Set its position slightly lower, as requested
         levelNode->setPosition(core::vector3df(0, -0.65f, 0));
+        levelNode->setID(IDFlag_IsPickable);
+        levelNode->setVisible(true);
 
         std::cout << "Creating triangle selector..." << std::endl; // Debug message
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
@@ -132,6 +152,7 @@ int main() {
         if (selector) {
             levelNode->setTriangleSelector(selector);
             selector->drop(); // The node now holds a reference, so we can drop ours
+            collMan = smgr->getSceneCollisionManager();
             std::cout << "Triangle selector set successfully." << std::endl; // Debug message
         }
         else {
@@ -222,35 +243,42 @@ int main() {
                 core::vector3df intersectionPoint;
                 core::triangle3df hitTriangle;
 
-                // 3. Perform collision detection against the *entire scene*
-                scene::ISceneNode* hitNode = smgr->getSceneCollisionManager()->getSceneNodeAndCollisionPointFromRay(
-                    ray,
-                    intersectionPoint, // Output: 3D collision point
-                    hitTriangle,       // Output: The triangle that was hit
-                    0                  // Default ID mask (check all)
-                );
+                // 3. Perform collision detection ONLY against pickable nodes
+                scene::ISceneNode* selectedSceneNode =
+                    collMan->getSceneNodeAndCollisionPointFromRay(
+                        ray,
+                        intersectionPoint, // This will be the position of the collision
+                        hitTriangle, // This will be the triangle hit in the collision
+                        IDFlag_IsPickable, // This ensures that only nodes that we have
+                        // set up to be pickable are considered
+                        0); // Check the entire scene
 
-                // 4. Check if we hit anything at all
-                if (hitNode) {
+                // 4. Check if we hit a pickable node
+                if (selectedSceneNode) {
                     // 5. Check if the node we hit was the levelNode
-                    if (hitNode == levelNode) {
+                    //    (This is technically optional if it's your only pickable node)
+                    if (selectedSceneNode == levelNode) {
                         std::cout << "Mouse clicked mesh at: "
                             << intersectionPoint.X << ", "
                             << intersectionPoint.Y << ", "
                             << intersectionPoint.Z << std::endl;
 
                         // Move the sphere to the intersection point
+                        //sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
+
+                        // Get the sphere's current position *before* moving it
+                        core::vector3df startPos = sphere->getPosition();
+
+                        // Move the sphere to the intersection point
                         sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
 
-                    }
-                    else {
-                        // We hit a different node (e.g., the sphere)
-                        std::cout << "Mouse clicked on a different node." << std::endl;
+                        // Calculate the path and store it in the member variable 'currentPath'
+                        currentPath = pathfinding->getPath(startPos, intersectionPoint);
                     }
                 }
                 else {
-                    // The ray didn't hit any node with a triangle selector
-                    std::cout << "Mouse ray missed all nodes." << std::endl;
+                    // The ray didn't hit any node *flagged as pickable*
+                    std::cout << "Mouse ray missed all pickable nodes." << std::endl;
                 }
             }
 
