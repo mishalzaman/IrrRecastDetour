@@ -400,7 +400,7 @@ bool ai_util_RecastDetour::handleBuild(scene::IMeshSceneNode* node)
 
 void ai_util_RecastDetour::resetCommonSettings()
 {
-    m_cellSize = 0.3f;
+    m_cellSize = 0.2f;
     m_cellHeight = 0.2f;
     m_agentHeight = 2.0f;
     m_agentRadius = 0.2f;

@@ -107,7 +107,7 @@ int main() {
 
     // Set up orthographic projection
     core::matrix4 projMat;
-    f32 orthoSize = 15.0f;  // Adjust this to control zoom (larger = more visible area)
+    f32 orthoSize = 18.0f;  // Adjust this to control zoom (larger = more visible area)
     f32 aspect = (f32)windowWidth / (f32)windowHeight;
     projMat.buildProjectionMatrixOrthoLH(
         orthoSize * aspect,      // width
