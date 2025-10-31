@@ -104,6 +104,8 @@ private:
     bool _keepInterResults;
     float _totalBuildTimeMs;
 
+    scene::ISceneNode* _naviDebugData = nullptr;
+
     void _cleanup();
 
     void _setContext(rcContext* ctx) { _ctx = ctx; }

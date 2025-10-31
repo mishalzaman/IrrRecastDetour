@@ -1,12 +1,68 @@
 #include "NavMesh.h"
 
 NavMesh::NavMesh() {
-	// Constructor implementation
+    _verts = 0;
+    _tris = 0;
+    
+    _ctx = 0;
+    _keepInterResults = true;
+    _totalBuildTimeMs = 0;
+    _triareas = 0;
+    
+    _solid = 0;
+    _chf = 0;
+    _cset = 0;
+    _pmesh = 0;
+    _dmesh = 0;
+    rcContext* ctx;
+    
+    _ctx = new rcContext();
+    
+    this->_resetCommonSettings();
 }
 
 NavMesh::~NavMesh()
 {
 	_cleanup();
+}
+
+bool NavMesh::load(scene::IMeshSceneNode* levelNode, scene::ISceneManager* smgr)
+{
+    _ctx = new rcContext();
+    _resetCommonSettings();
+
+    if (levelNode)
+    {
+        if (_handleBuild(levelNode))
+        {
+            printf("PASSED::_handleBuild(levelNode)\n");
+            scene::SMesh* smesh = new scene::SMesh();
+            if (!_setupIrrSMeshFromRecastDetailMesh(smesh))
+            {
+                printf("_setupIrrSMeshFromRecastDetailMesh(smesh): FAILED!\n");
+                return false;
+            }
+            else
+            {
+                printf("_setupIrrSMeshFromRecastDetailMesh(smesh): PASSED!\n");
+                _naviDebugData = smgr->addOctreeSceneNode(smesh);
+                _naviDebugData->setName("Terrain");
+                _naviDebugData->setDebugDataVisible(scene::EDS_MESH_WIRE_OVERLAY);
+                _naviDebugData->setPosition(core::vector3df(0, -1, 0));
+            }
+            smesh->drop();
+        }
+        else {
+            printf("ERROR::_handleBuild(levelNode)\n");
+            return false;
+        }
+    }
+    else {
+        printf("ERROR::levelNode is null\n");
+        return false;
+    }
+
+    return true;
 }
 
 std::vector<irr::core::vector3df> NavMesh::getPath(irr::core::vector3df start, irr::core::vector3df end)

@@ -11,8 +11,7 @@ Game Engine Main Loop
 #include <irrlicht.h>
 #include <memory>
 #include "Config.h"
-#include "ai_Pathfinding.h"
-#include "ai_util_RecastDetour.h"
+#include "NavMesh.h"
 
 using namespace irr;
 using namespace core;
@@ -168,15 +167,15 @@ int main() {
     ================================ */
 
     // Initialize pathfinding system
-    ai_Pathfinding* pathfinding = new ai_Pathfinding();
+    NavMesh* navmesh = new NavMesh();
 
     std::cout << "Building navigation mesh from levelNode..." << std::endl; // CHANGED
 
     // CHANGED: Pass the existing 'levelNode' instead of the filename
-    if (!pathfinding->load(levelNode, smgr)) {
+    if (!navmesh->load(levelNode, smgr)) {
         std::cerr << "Failed to build navigation mesh!" << std::endl;
         device->drop();
-        delete pathfinding;
+        delete navmesh;
         return 1;
     }
     std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
@@ -305,7 +304,7 @@ int main() {
                         core::vector3df startPos = sphere->getPosition();
 
                         // Calculate the path and store it in the member variable 'currentPath'
-                        currentPath = pathfinding->getPath(startPos, intersectionPoint);
+                        currentPath = navmesh->getPath(startPos, intersectionPoint);
 
                         if (!currentPath.empty()) {
                             currentPathIndex = 0;
@@ -334,7 +333,7 @@ int main() {
 
             // Draw debug path (after drawAll so it renders on top)
             if (currentPath.size() > 0) {
-                pathfinding->renderDebugPath(currentPath, driver);
+                navmesh->renderDebugPath(currentPath, driver);
             }
 
             driver->endScene();
@@ -347,7 +346,7 @@ int main() {
     /* ===============================
     CLEANUP
     ================================ */
-    delete pathfinding;
+    delete navmesh;
     device->drop();
 
     std::cout << "Game exited successfully." << std::endl;
