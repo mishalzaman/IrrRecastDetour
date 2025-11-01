@@ -99,22 +99,12 @@ int main() {
     // Add camera - positioned closer to see the mesh better
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(0, 14, 0),    // position: Directly above the origin
-        vector3df(0, 0, 0)       // target: Looking down at the origin
+        vector3df(6, 16, 6),
+        vector3df(0, 0, 0)
     );
-    camera->setUpVector(vector3df(0, 0, 1));
 
-    // Set up orthographic projection
-    core::matrix4 projMat;
-    f32 orthoSize = 18.0f;  // Adjust this to control zoom (larger = more visible area)
-    f32 aspect = (f32)windowWidth / (f32)windowHeight;
-    projMat.buildProjectionMatrixOrthoLH(
-        orthoSize * aspect,      // width
-        orthoSize,               // height
-        0.1f,                    // near plane
-        100.0f                   // far plane
-    );
-    camera->setProjectionMatrix(projMat, true);
+    // Set the aspect ratio for the perspective camera
+    camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
 
     /* ===============================
     LEVEL MESH SETUP (Moved from Pathfinding)
@@ -128,7 +118,7 @@ int main() {
     };
 
     // 1. Load the mesh data
-    scene::IMesh* levelMesh = smgr->getMesh("media/test_map.obj");
+    scene::IMesh* levelMesh = smgr->getMesh("media/test_map_2.obj");
     if (!levelMesh) {
         std::cerr << "Failed to load media/test_map.obj!" << std::endl;
         device->drop();
