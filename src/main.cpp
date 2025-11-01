@@ -92,19 +92,30 @@ int main() {
     driver->setTextureCreationFlag(ETCF_CREATE_MIP_MAPS, false);
     driver->setTextureCreationFlag(ETCF_OPTIMIZED_FOR_QUALITY, false);
 
+    smgr->setShadowColor(video::SColor(150, 0, 0, 0)); // Semi-transparent black
+    driver->setTextureCreationFlag(ETCF_CREATE_MIP_MAPS, false);
+
     /* ===============================
-    SCENE SETUP
+    CAMERA SETUP
     ================================ */
 
     // Add camera - positioned closer to see the mesh better
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(6, 16, 6),
+        vector3df(8, 10, 6),
         vector3df(0, 0, 0)
     );
 
     // Set the aspect ratio for the perspective camera
     camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
+
+    scene::ILightSceneNode* light = smgr->addLightSceneNode(
+        0,
+        core::vector3df(-10, 30, -15), // Position the light up and to the side
+        video::SColorf(1.0f, 1.0f, 1.0f), // White light
+        12.0f // Radius
+    );
+    light->enableCastShadow(true); // Tell the light to cast shadows
 
     /* ===============================
     LEVEL MESH SETUP (Moved from Pathfinding)
@@ -130,7 +141,7 @@ int main() {
 
     scene::IMeshSceneNode* levelNode = smgr->addMeshSceneNode(levelMesh);
     if (levelNode) {
-        levelNode->setMaterialFlag(EMF_LIGHTING, false);
+        levelNode->setMaterialFlag(EMF_LIGHTING, true);
         // Set its position slightly lower, as requested
         levelNode->setPosition(core::vector3df(0, -0.65f, 0));
         levelNode->setID(IDFlag_IsPickable);
@@ -178,11 +189,17 @@ int main() {
     IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.5f, 16);
     if (sphere) {
         sphere->setPosition(vector3df(0, 1, 0));
-        sphere->setMaterialFlag(EMF_LIGHTING, false);
+        sphere->setMaterialFlag(EMF_LIGHTING, true); // 1. Enable lighting
         sphere->setMaterialTexture(0, 0);
-        sphere->getMaterial(0).DiffuseColor = SColor(255, 100, 100, 255);
-        sphere->getMaterial(0).AmbientColor = SColor(255, 100, 100, 255);
-        sphere->getMaterial(0).EmissiveColor = SColor(255, 50, 50, 150);
+
+        // 2. Adjust material to react to light
+        sphere->getMaterial(0).DiffuseColor = SColor(255, 200, 200, 200); // Bright diffuse to catch light
+        sphere->getMaterial(0).AmbientColor = SColor(255, 40, 40, 40);   // Dark ambient for shadowed areas
+        sphere->getMaterial(0).EmissiveColor = SColor(0, 0, 0, 0);      // No self-illumination
+        sphere->getMaterial(0).Shininess = 20.0f;                        // Add a small highlight
+
+        // 3. Tell the sphere to cast shadows
+        sphere->addShadowVolumeSceneNode();
     }
 
     std::cout << "Sphere at position: " << sphere->getPosition().X << ", "
