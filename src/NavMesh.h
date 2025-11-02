@@ -36,6 +36,24 @@ enum SamplePolyFlags
     SAMPLE_POLYFLAGS_ALL = 0xffff   // All abilities.
 };
 
+struct NavMeshDefaults
+{
+    static constexpr float CellSize = 0.2f;
+    static constexpr float CellHeight = 0.2f;
+    static constexpr float AgentHeight = 1.0f;
+    static constexpr float AgentRadius = 0.2f;
+    static constexpr float AgentMaxClimb = 0.9f;
+    static constexpr float AgentMaxSlope = 45.0f;
+    static constexpr int   RegionMinSize = 8;
+    static constexpr int   RegionMergeSize = 20;
+    static constexpr bool  MonotonePartitioning = false;
+    static constexpr float EdgeMaxLen = 12.0f;
+    static constexpr float EdgeMaxError = 1.3f;
+    static constexpr float VertsPerPoly = 6.0f;
+    static constexpr float DetailSampleDist = 6.0f;
+    static constexpr float DetailSampleMaxError = 1.0f;
+};
+
 class NavMesh
 {
 public:

@@ -483,20 +483,20 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
 
 void NavMesh::_resetCommonSettings()
 {
-    _cellSize = 0.2f;
-    _cellHeight = 0.2f;
-    _agentHeight = 2.0f;
-    _agentRadius = 0.2f;
-    _agentMaxClimb = 0.9f;
-    _agentMaxSlope = 45.0f;
-    _regionMinSize = 8;
-    _regionMergeSize = 20;
-    _monotonePartitioning = false;
-    _edgeMaxLen = 12.0f;
-    _edgeMaxError = 1.3f;
-    _vertsPerPoly = 6.0f;
-    _detailSampleDist = 6.0f;
-    _detailSampleMaxError = 1.0f;
+    _cellSize = NavMeshDefaults::CellSize;
+    _cellHeight = NavMeshDefaults::CellHeight;
+    _agentHeight = NavMeshDefaults::AgentHeight;
+    _agentRadius = NavMeshDefaults::AgentRadius;
+    _agentMaxClimb = NavMeshDefaults::AgentMaxClimb;
+    _agentMaxSlope = NavMeshDefaults::AgentMaxSlope;
+    _regionMinSize = NavMeshDefaults::RegionMinSize;
+    _regionMergeSize = NavMeshDefaults::RegionMergeSize;
+    _monotonePartitioning = NavMeshDefaults::MonotonePartitioning;
+    _edgeMaxLen = NavMeshDefaults::EdgeMaxLen;
+    _edgeMaxError = NavMeshDefaults::EdgeMaxError;
+    _vertsPerPoly = NavMeshDefaults::VertsPerPoly;
+    _detailSampleDist = NavMeshDefaults::DetailSampleDist;
+    _detailSampleMaxError = NavMeshDefaults::DetailSampleMaxError;
 }
 
 bool NavMesh::_getMeshBufferData(irr::scene::IMeshSceneNode* node, std::vector<float>& verts, int& nverts, std::vector<int>& tris, int& ntris)
