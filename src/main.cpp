@@ -102,7 +102,7 @@ int main() {
     // Add camera - positioned closer to see the mesh better
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(8, 10, 6),
+        vector3df(8, 8, 8),
         vector3df(0, 0, 0)
     );
 
@@ -143,7 +143,7 @@ int main() {
     if (levelNode) {
         levelNode->setMaterialFlag(EMF_LIGHTING, true);
         // Set its position slightly lower, as requested
-        levelNode->setPosition(core::vector3df(0, -0.65f, 0));
+        levelNode->setPosition(core::vector3df(0, 0, 0));
         levelNode->setID(IDFlag_IsPickable);
         levelNode->setVisible(true);
 
@@ -169,17 +169,23 @@ int main() {
 
     // Initialize pathfinding system
     NavMesh* navmesh = new NavMesh();
+    NavMeshParams params;
 
-    std::cout << "Building navigation mesh from levelNode..." << std::endl; // CHANGED
+    // You could customize it here if you wanted:
+    // params.AgentHeight = 2.0f;
+    // params.AgentRadius = 0.5f;
 
-    // CHANGED: Pass the existing 'levelNode' instead of the filename
-    if (!navmesh->load(levelNode, smgr)) {
+    // 2. Call build() using the levelNode and the new params object
+    if (!navmesh->build(levelNode, params)) {
         std::cerr << "Failed to build navigation mesh!" << std::endl;
         device->drop();
         delete navmesh;
         return 1;
     }
-    std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
+
+    // 3. (Optional) Now that it's built, create the debug mesh
+    //    This is where you use the scene manager (smgr)
+    navmesh->createDebugMeshNode(smgr);
 
     /* ===============================
     SPHERE SETUP
@@ -311,7 +317,7 @@ int main() {
                         core::vector3df startPos = sphere->getPosition();
 
                         // Calculate the path and store it in the member variable 'currentPath'
-                        currentPath = navmesh->getPath(startPos, intersectionPoint);
+                        currentPath = navmesh->findPath(startPos, intersectionPoint);
 
                         if (!currentPath.empty()) {
                             currentPathIndex = 0;
