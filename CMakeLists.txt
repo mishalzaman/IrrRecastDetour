@@ -113,15 +113,23 @@ if(WIN32)
 endif()
 
 # --- Post-Build Step (Copy runtime assets) ---
-set(IRRLICHT_MEDIA_DIR "${IRRLICHT_ROOT}/media")
-if(EXISTS "${IRRLICHT_MEDIA_DIR}")
+# Define the SOURCE directory (where your assets are)
+set(ASSETS_SOURCE_DIR "${CMAKE_SOURCE_DIR}/assets")
+
+# Define the DESTINATION directory (next to your .exe)
+# $<TARGET_FILE_DIR:IrrRecastDetour> is a generator expression
+# that correctly finds the executable's output folder.
+set(ASSETS_DEST_DIR "$<TARGET_FILE_DIR:IrrRecastDetour>/assets")
+
+# Check if the SOURCE directory exists
+if(EXISTS "${ASSETS_SOURCE_DIR}")
     add_custom_command(TARGET IrrRecastDetour POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-        "${IRRLICHT_MEDIA_DIR}"
-        "$<TARGET_FILE_DIR:IrrRecastDetour>/media"
-        COMMENT "Copying Irrlicht 'media' directory to executable directory"
+        "${ASSETS_SOURCE_DIR}"  # <-- Source
+        "${ASSETS_DEST_DIR}"    # <-- Destination
+        COMMENT "Copying 'assets' directory to executable directory"
     )
-    message(STATUS "Will copy media assets from: ${IRRLICHT_MEDIA_DIR}")
+    message(STATUS "Will copy assets from: ${ASSETS_SOURCE_DIR}")
 else()
-    message(WARNING "Irrlicht media directory not found at: ${IRRLICHT_MEDIA_DIR}")
+    message(WARNING "assets directory not found at: ${ASSETS_SOURCE_DIR}")
 endif()

@@ -129,9 +129,9 @@ int main() {
     };
 
     // 1. Load the mesh data
-    scene::IMesh* levelMesh = smgr->getMesh("media/test_map_2.obj");
+    scene::IMesh* levelMesh = smgr->getMesh("assets/test_map_2.obj");
     if (!levelMesh) {
-        std::cerr << "Failed to load media/test_map.obj!" << std::endl;
+        std::cerr << "Failed to load assets/test_map.obj!" << std::endl;
         device->drop();
         return 1;
     }
