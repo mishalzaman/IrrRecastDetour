@@ -8,6 +8,7 @@
 #include <memory> // For std::unique_ptr
 
 #include <irrlicht.h>
+#include <ISceneNode.h>
 #include "Recast.h"
 #include "DetourNavMeshQuery.h"
 #include "DetourNavMesh.h"
@@ -79,15 +80,23 @@ struct NavMeshParams
     bool  KeepInterResults = false;
 };
 
-class NavMesh
+class NavMesh : public irr::scene::ISceneNode
 {
 public:
-    NavMesh();
+    NavMesh(
+        irr::scene::ISceneNode* parent,
+        irr::scene::ISceneManager* mgr,
+        irr::s32 id = -1
+    );
     ~NavMesh();
 
     // Disable copy and move
     NavMesh(const NavMesh&) = delete;
     NavMesh& operator=(const NavMesh&) = delete;
+
+    virtual void OnRegisterSceneNode() override;
+    virtual void render() override;
+    virtual const irr::core::aabbox3d<irr::f32>& getBoundingBox() const override;
 
     /**
      * @brief Builds the navigation mesh from the given scene node.
@@ -126,9 +135,7 @@ public:
      * @param smgr The Irrlicht scene manager.
      * @return The debug scene node, or nullptr if the build failed or smgr is null.
      */
-    irr::scene::ISceneNode* createDebugMeshNode(
-        irr::scene::ISceneManager* smgr
-    );
+    irr::scene::ISceneNode* createDebugMeshNode();
 
     /**
      * @brief Gets the total time in milliseconds for the last successful build.
@@ -159,6 +166,8 @@ private:
     float _totalBuildTimeMs;
 
     irr::scene::ISceneNode* _naviDebugData = nullptr;
+
+    irr::core::aabbox3d<irr::f32> _box;
 
     bool _getMeshBufferData
     (

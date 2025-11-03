@@ -194,24 +194,25 @@ int main() {
     ================================ */
 
     // Initialize pathfinding system
-    NavMesh* navmesh = new NavMesh();
+    NavMesh* navmesh = new NavMesh(smgr->getRootSceneNode(), smgr, -1);
+
     NavMeshParams params;
 
-    // You could customize it here if you wanted:
-    // params.AgentHeight = 2.0f;
-    // params.AgentRadius = 0.5f;
+    // ...
 
-    // 2. Call build() using the levelNode and the new params object
     if (!navmesh->build(levelNode, params)) {
         std::cerr << "Failed to build navigation mesh!" << std::endl;
         device->drop();
-        delete navmesh;
+        // Change this:
+        // delete navmesh; 
+        // To this:
+        navmesh->drop(); // <-- USE DROP()
         return 1;
     }
 
     // 3. (Optional) Now that it's built, create the debug mesh
-    //    This is where you use the scene manager (smgr)
-    navmesh->createDebugMeshNode(smgr);
+    //    It no longer needs smgr
+    navmesh->createDebugMeshNode();
 
     /* ===============================
     SPHERE SETUP
@@ -385,7 +386,7 @@ int main() {
     /* ===============================
     CLEANUP
     ================================ */
-    delete navmesh;
+    navmesh->drop();
     device->drop();
 
     std::cout << "Game exited successfully." << std::endl;

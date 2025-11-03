@@ -7,18 +7,36 @@ using irr::core::matrix4;
 using irr::scene::ISceneNode;
 using irr::scene::IMeshSceneNode;
 
-NavMesh::NavMesh() : _ctx(new rcContext()), _totalBuildTimeMs(0.0f)
+NavMesh::NavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
+    : irr::scene::ISceneNode(parent, mgr, id), // Call the base constructor
+    _ctx(new rcContext()),
+    _totalBuildTimeMs(0.0f)
 {
-    // All smart pointers are initialized to nullptr by default.
+    // This node is invisible by default
+    setVisible(true);
 }
 
 NavMesh::~NavMesh()
 {
-    // All resources are freed automatically by std::unique_ptr deleters.
-    if (_naviDebugData)
-    {
-        _naviDebugData->remove();
-    }
+}
+
+void NavMesh::OnRegisterSceneNode()
+{
+    // Always register children, even if parent is invisible
+    ISceneNode::OnRegisterSceneNode();
+
+    // Only register self if visible (which it isn't, but children still render)
+    if (IsVisible)
+        SceneManager->registerNodeForRendering(this);
+}
+
+void NavMesh::render()
+{
+}
+
+const irr::core::aabbox3d<irr::f32>& NavMesh::getBoundingBox() const
+{
+    return _box;
 }
 
 bool NavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
@@ -400,9 +418,9 @@ void NavMesh::renderDebugPath(const std::vector<vector3df>& path, irr::video::IV
     }
 }
 
-ISceneNode* NavMesh::createDebugMeshNode(irr::scene::ISceneManager* smgr)
+ISceneNode* NavMesh::createDebugMeshNode()
 {
-    if (!smgr)
+    if (!SceneManager)
     {
         printf("ERROR: NavMesh::createDebugMeshNode: SceneManager is null.\n");
         return nullptr;
@@ -428,15 +446,20 @@ ISceneNode* NavMesh::createDebugMeshNode(irr::scene::ISceneManager* smgr)
         return nullptr;
     }
 
-    _naviDebugData = smgr->addOctreeSceneNode(smesh);
+    _naviDebugData = SceneManager->addMeshSceneNode(smesh, this); // Use regular mesh node instead of octree
+
     if (_naviDebugData)
     {
         _naviDebugData->setName("NavMeshDebugNode");
-        _naviDebugData->setDebugDataVisible(irr::scene::EDS_MESH_WIRE_OVERLAY);
-        _naviDebugData->setPosition(vector3df(0, 0.1f, 0)); // Position (0, -1, 0) seemed arbitrary
+        _naviDebugData->setMaterialFlag(irr::video::EMF_LIGHTING, false);
+        _naviDebugData->setMaterialFlag(irr::video::EMF_WIREFRAME, true);
+        _naviDebugData->setPosition(irr::core::vector3df(0, 0.1f, 0));
+        _naviDebugData->setVisible(true); // Explicitly set visible
+
+        printf("Debug mesh created with %d vertices\n", smesh->getMeshBuffer(0)->getVertexCount());
     }
 
-    smesh->drop(); // The scene node has a reference now
+    smesh->drop();
     return _naviDebugData;
 }
 
@@ -614,7 +637,7 @@ bool NavMesh::_setMeshBufferData(
             verts[i * 3 + 1],
             verts[i * 3 + 2],
             0.0f, 1.0f, 0.0f, // Normal
-            0x8000FF00,       // Color
+            irr::video::SColor(255, 0, 255, 0),
             0.0f, 0.0f        // TCoords
         );
     }
@@ -628,7 +651,7 @@ bool NavMesh::_setMeshBufferData(
     buffer.getMaterial().BackfaceCulling = false;
     buffer.getMaterial().Wireframe = true;
     buffer.getMaterial().Thickness = 2.0f;
-    buffer.getMaterial().MaterialType = irr::video::EMT_TRANSPARENT_ALPHA_CHANNEL;
+    buffer.getMaterial().MaterialType = irr::video::EMT_SOLID;
     buffer.recalculateBoundingBox();
 
     return true;
