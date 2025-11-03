@@ -212,7 +212,7 @@ int main() {
 
     // 3. (Optional) Now that it's built, create the debug mesh
     //    It no longer needs smgr
-    navmesh->createDebugMeshNode();
+    navmesh->renderNavMesh();
 
     /* ===============================
     SPHERE SETUP
@@ -367,7 +367,7 @@ int main() {
             guienv->drawAll();
 
             // Draw debug path (after drawAll so it renders on top)
-            navmesh->renderCrowdDebug(driver);
+            navmesh->renderAgentPaths(driver);
 
             driver->endScene();
         }

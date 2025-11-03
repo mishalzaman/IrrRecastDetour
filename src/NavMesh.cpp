@@ -12,7 +12,6 @@ NavMesh::NavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr,
     _ctx(new rcContext()),
     _totalBuildTimeMs(0.0f)
 {
-    // This node is invisible by default
     setVisible(true);
 }
 
@@ -370,86 +369,7 @@ bool NavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
     return true;
 }
 
-std::vector<vector3df> NavMesh::findPath(vector3df pStart, vector3df pEnd)
-{
-    std::vector<vector3df> lstPoints;
-    if (!_navQuery || !_navMesh)
-    {
-        return lstPoints; // Not initialized
-    }
-
-    dtQueryFilter filter;
-    dtPolyRef startRef, endRef;
-    const int MAX_POLYS = 256;
-    dtPolyRef returnedPath[MAX_POLYS];
-    float straightPath[MAX_POLYS * 3];
-    int numStraightPaths = 0;
-    int pathCount = 0;
-
-    float spos[3] = { pStart.X, pStart.Y, pStart.Z };
-    float epos[3] = { pEnd.X, pEnd.Y, pEnd.Z };
-    float polyPickExt[3] = { 2.0f, 4.0f, 2.0f };
-
-    _navQuery->findNearestPoly(spos, polyPickExt, &filter, &startRef, nullptr);
-    if (startRef == 0)
-    {
-        printf("WARNING: NavMesh::findPath: Could not find start polygon.\n");
-        return lstPoints;
-    }
-
-    _navQuery->findNearestPoly(epos, polyPickExt, &filter, &endRef, nullptr);
-    if (endRef == 0)
-    {
-        printf("WARNING: NavMesh::findPath: Could not find end polygon.\n");
-        return lstPoints;
-    }
-
-    dtStatus findStatus = _navQuery->findPath(startRef, endRef, spos, epos, &filter, returnedPath, &pathCount, MAX_POLYS);
-
-    if (dtStatusFailed(findStatus) || pathCount == 0)
-    {
-        printf("WARNING: NavMesh::findPath: Could not find path.\n");
-        return lstPoints;
-    }
-
-    findStatus = _navQuery->findStraightPath(spos, epos, returnedPath,
-        pathCount, straightPath, nullptr, nullptr, &numStraightPaths, MAX_POLYS);
-
-    if (dtStatusFailed(findStatus))
-    {
-        printf("WARNING: NavMesh::findPath: Could not find straight path.\n");
-        return lstPoints;
-    }
-
-    for (int i = 0; i < numStraightPaths; ++i)
-    {
-        vector3df cpos(straightPath[i * 3], straightPath[i * 3 + 1] + 0.25, // Small offset
-            straightPath[i * 3 + 2]);
-        lstPoints.push_back(cpos);
-    }
-
-    return lstPoints;
-}
-
-void NavMesh::renderDebugPath(const std::vector<vector3df>& path, irr::video::IVideoDriver* driver)
-{
-    if (path.size() < 2)
-    {
-        return;
-    }
-
-    irr::video::SMaterial m;
-    m.Lighting = false;
-    driver->setMaterial(m);
-    driver->setTransform(irr::video::ETS_WORLD, matrix4());
-
-    for (size_t i = 0; i < path.size() - 1; ++i)
-    {
-        driver->draw3DLine(path[i], path[i + 1], irr::video::SColor(255, 255, 0, 0));
-    }
-}
-
-ISceneNode* NavMesh::createDebugMeshNode()
+ISceneNode* NavMesh::renderNavMesh()
 {
     if (!SceneManager)
     {
@@ -609,7 +529,7 @@ void NavMesh::update(float deltaTime)
     }
 }
 
-void NavMesh::renderCrowdDebug(irr::video::IVideoDriver* driver)
+void NavMesh::renderAgentPaths(irr::video::IVideoDriver* driver)
 {
     if (!_crowd || !driver)
         return;

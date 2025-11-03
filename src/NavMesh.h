@@ -101,6 +101,7 @@ public:
     NavMesh(const NavMesh&) = delete;
     NavMesh& operator=(const NavMesh&) = delete;
 
+    // Override methods from ISceneNode
     virtual void OnRegisterSceneNode() override;
     virtual void render() override;
     virtual const irr::core::aabbox3d<irr::f32>& getBoundingBox() const override;
@@ -115,34 +116,6 @@ public:
         irr::scene::IMeshSceneNode* levelNode,
         const NavMeshParams& params
     );
-
-    /**
-     * @brief Finds a path from a start to an end point.
-     * @param start The 3D start position.
-     * @param end The 3D end position.
-     * @return A vector of 3D points representing the path. Empty if no path is found.
-     */
-    std::vector<irr::core::vector3df> findPath(
-        irr::core::vector3df start,
-        irr::core::vector3df end
-    );
-
-    /**
-     * @brief Renders a debug visualization of a path.
-     * @param path The path to render.
-     * @param driver The Irrlicht video driver.
-     */
-    void renderDebugPath(
-        const std::vector<irr::core::vector3df>& path,
-        irr::video::IVideoDriver* driver
-    );
-
-    /**
-     * @brief Creates (or re-creates) a scene node visualizing the navmesh polygons.
-     * @param smgr The Irrlicht scene manager.
-     * @return The debug scene node, or nullptr if the build failed or smgr is null.
-     */
-    irr::scene::ISceneNode* createDebugMeshNode();
 
     /**
      * @brief Gets the total time in milliseconds for the last successful build.
@@ -180,10 +153,17 @@ public:
     void update(float deltaTime);
 
     /**
+     * @brief Creates (or re-creates) a scene node visualizing the navmesh polygons.
+     * @param smgr The Irrlicht scene manager.
+     * @return The debug scene node, or nullptr if the build failed or smgr is null.
+     */
+    irr::scene::ISceneNode* renderNavMesh();
+
+    /**
     * @brief Renders debug lines for all agent paths in the crowd.
     * @param driver The Irrlicht video driver.
     */
-    void renderCrowdDebug(irr::video::IVideoDriver* driver);
+    void renderAgentPaths(irr::video::IVideoDriver* driver);
 
 private:
     // Recast/Detour core objects (RAII-managed)
@@ -212,10 +192,8 @@ private:
 
     irr::core::aabbox3d<irr::f32> _box;
 
-    // --- NEW CROWD OBJECT ---
     std::unique_ptr<dtCrowd, DetourCrowdDeleter> _crowd;
 
-    // --- NEW AGENT MAP ---
     // Links dtCrowd agent IDs to Irrlicht scene nodes
     std::map<int, irr::scene::ISceneNode*> _agentNodeMap;
 
