@@ -248,6 +248,11 @@ int main() {
     ENEMY SETUP
     ================================ */
 
+    dtCrowdAgentParams dtparams;
+    memset(&dtparams, 0, sizeof(dtparams)); // <-- ADD THIS LINE
+    dtparams.maxAcceleration = 20.0f;        // Now set your custom value
+	dtparams.maxSpeed = 1.0f;               // Now set your custom valueq
+
         // Create the first enemy (red cube)
     IMeshSceneNode* enemy1 = smgr->addSphereSceneNode(0.2f, 16); // 1.0f size = 0.5f radius
     if (enemy1) {
@@ -257,7 +262,7 @@ int main() {
 
         // Add enemy to the crowd
         // Note: We use the same agent params as the player for this demo
-        enemy1AgentId = navmesh->addAgent(enemy1, params.AgentRadius, params.AgentHeight);
+        enemy1AgentId = navmesh->addAgent(enemy1, dtparams);
         if (enemy1AgentId == -1)
         {
             std::cerr << "Failed to add enemy 1 to crowd!" << std::endl;
@@ -272,7 +277,7 @@ int main() {
         enemy2->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
 
         // Add enemy to the crowd
-        enemy2AgentId = navmesh->addAgent(enemy2, params.AgentRadius, params.AgentHeight);
+        enemy2AgentId = navmesh->addAgent(enemy2, dtparams);
         if (enemy2AgentId == -1)
         {
             std::cerr << "Failed to add enemy 2 to crowd!" << std::endl;

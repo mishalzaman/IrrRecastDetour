@@ -496,23 +496,62 @@ ISceneNode* NavMesh::createDebugMeshNode()
 
 int NavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float height)
 {
+    dtCrowdAgentParams ap;
+    memset(&ap, 0, sizeof(ap)); // Zero out the struct so defaults will be applied
+
+    // Set only the parameters we were given
+    ap.radius = radius;
+    ap.height = height;
+
+    // Call the advanced function to handle the rest
+    return this->addAgent(node, ap);
+}
+
+int NavMesh::addAgent(irr::scene::ISceneNode* node, const dtCrowdAgentParams& userParams)
+{
     if (!_crowd || !node)
         return -1;
 
-    dtCrowdAgentParams ap;
-    memset(&ap, 0, sizeof(ap));
-    ap.radius = radius;
-    ap.height = height;
-    ap.maxAcceleration = 20.0f;
-    ap.maxSpeed = 3.5f; // You can make this a parameter
-    ap.collisionQueryRange = ap.radius * 12.0f;
-    ap.pathOptimizationRange = ap.radius * 30.0f;
-    ap.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE;
+    // Copy the user's params to a new struct that we can modify
+    dtCrowdAgentParams finalParams = userParams;
+
+    // --- Apply Defaults for "Missing" (0) Values ---
+
+    // Set default radius/height from the navmesh build params if not set
+    if (finalParams.radius == 0.0f)
+        finalParams.radius = _params.AgentRadius;
+
+    if (finalParams.height == 0.0f)
+        finalParams.height = _params.AgentHeight;
+
+    // Set default movement params if not set
+    if (finalParams.maxAcceleration == 0.0f)
+        finalParams.maxAcceleration = 20.0f; // Default from old function
+
+    if (finalParams.maxSpeed == 0.0f)
+        finalParams.maxSpeed = 3.5f; // Default from old function
+
+    // Set default query ranges if not set. These depend on the radius.
+    if (finalParams.collisionQueryRange == 0.0f)
+        finalParams.collisionQueryRange = finalParams.radius * 12.0f;
+
+    if (finalParams.pathOptimizationRange == 0.0f)
+        finalParams.pathOptimizationRange = finalParams.radius * 30.0f;
+
+    // Set default update flags if not set
+    if (finalParams.updateFlags == 0)
+        finalParams.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE;
+
+    // --- Add Agent to Crowd ---
 
     vector3df pos = node->getPosition();
-    float irrPos[3] = { pos.X, pos.Y - 0.5f, pos.Z }; // Assume position is center, adjust to feet
 
-    int id = _crowd->addAgent(irrPos, &ap);
+    // Agent position is at their feet.
+    // We assume the node's position is its visual center.
+    // So, we offset the Y position by half the agent's height.
+    float irrPos[3] = { pos.X, pos.Y - (finalParams.height / 2.0f), pos.Z };
+
+    int id = _crowd->addAgent(irrPos, &finalParams);
     if (id != -1)
     {
         _agentNodeMap[id] = node;
@@ -578,6 +617,7 @@ void NavMesh::renderCrowdDebug(irr::video::IVideoDriver* driver)
     // Setup material for drawing lines
     irr::video::SMaterial m;
     m.Lighting = false;
+    m.Thickness = 2.0f;
     driver->setMaterial(m);
     driver->setTransform(irr::video::ETS_WORLD, matrix4());
 
@@ -585,39 +625,41 @@ void NavMesh::renderCrowdDebug(irr::video::IVideoDriver* driver)
     for (int i = 0; i < _crowd->getAgentCount(); ++i)
     {
         const dtCrowdAgent* agent = _crowd->getAgent(i);
-        if (!agent || !agent->active)
+
+        // Skip if agent isn't active or has no path (no corners)
+        if (!agent || !agent->active || agent->ncorners == 0)
             continue;
 
-        // --- THE FIX ---
+        // --- CORRECTED LOGIC ---
 
-        // Check the number of corners
-        if (agent->ncorners < 2) // Need at least 2 points to draw a line
-            continue;
+        // The path starts at the agent's current position.
+        // 'p' will be our moving 'start' point.
+        const float* p = agent->npos;
+        vector3df startPoint(p[0], p[1] + 0.5f, p[2]); // Add a small Y-offset
 
-        // Get the path corners from agent->cornerVerts
+        // Get the list of waypoints
         const float* pathPoints = agent->cornerVerts;
 
-        // Draw lines between the waypoints
-        for (int j = 0; j < agent->ncorners - 1; ++j)
+        // Iterate through all corners
+        // The path is: agent->npos -> corner[0] -> corner[1] -> ...
+        for (int j = 0; j < agent->ncorners; ++j)
         {
-            // Points are (x, y, z)
-            vector3df start(
+            // Get the current corner as the 'end' point for this segment
+            vector3df endPoint(
                 pathPoints[j * 3],
-                pathPoints[j * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
+                pathPoints[j * 3 + 1] + 1.5f, // Add Y-offset
                 pathPoints[j * 3 + 2]
             );
-            vector3df end(
-                pathPoints[(j + 1) * 3],
-                pathPoints[(j + 1) * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
-                pathPoints[(j + 1) * 3 + 2]
-            );
 
-            // Draw a yellow line for the path
-            driver->draw3DLine(start, end, irr::video::SColor(255, 255, 0, 0));
+            // Draw the line segment (e.g., agentPos -> corner0)
+            driver->draw3DLine(startPoint, endPoint, irr::video::SColor(0, 255, 0, 0));
+
+            // For the next loop, the 'start' point becomes this 'end' point
+            // (e.g., next segment will be corner0 -> corner1)
+            startPoint = endPoint;
         }
     }
 }
-
 
 bool NavMesh::_getMeshBufferData(
     IMeshSceneNode* node,

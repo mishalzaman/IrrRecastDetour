@@ -159,6 +159,14 @@ public:
     int addAgent(irr::scene::ISceneNode* node, float radius, float height);
 
     /**
+         * @brief Adds a new agent to the crowd simulation (Advanced version).
+         * @param node The Irrlicht scene node this agent will control.
+         * @param params The Detour crowd agent parameters. Any 0-value fields will be filled with defaults.
+         * @return The agent's ID, or -1 on failure.
+         */
+    int addAgent(irr::scene::ISceneNode* node, const dtCrowdAgentParams& params);
+
+    /**
      * @brief Sets a new movement target for an agent.
      * @param agentId The ID returned by addAgent.
      * @param targetPos The world-space destination.
