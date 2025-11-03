@@ -66,16 +66,16 @@ struct NavMeshParams
     float CellHeight = 0.2f;
     float AgentHeight = 1.0f;
     float AgentRadius = 0.2f;
-    float AgentMaxClimb = 0.9f;
+    float AgentMaxClimb = 0.7f;
     float AgentMaxSlope = 85.0f;
     int   RegionMinSize = 8;
     int   RegionMergeSize = 20;
     bool  MonotonePartitioning = false;
     float EdgeMaxLen = 12.0f;
-    float EdgeMaxError = 1.3f;
+    float EdgeMaxError = 0.1f;
     float VertsPerPoly = 6.0f;
-    float DetailSampleDist = 6.0f;
-    float DetailSampleMaxError = 1.0f;
+    float DetailSampleDist = 3.0f;
+    float DetailSampleMaxError = 0.5f;
     bool  KeepInterResults = false;
 };
 

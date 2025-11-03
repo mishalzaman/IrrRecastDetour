@@ -99,23 +99,49 @@ int main() {
     CAMERA SETUP
     ================================ */
 
-    // Add camera - positioned closer to see the mesh better
+    // Orthographic Camera
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(8, 8, 8),
-        vector3df(0, 0, 0)
+        vector3df(0, 8, 0),   // Position
+        vector3df(0, 0, 0),   // Look-at target
+        -1,                   // ID
+        true                  // Use orthographic camera
     );
 
-    // Set the aspect ratio for the perspective camera
-    camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
+    // Calculate aspect ratio to fix stretching
+    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
 
-    scene::ILightSceneNode* light = smgr->addLightSceneNode(
-        0,
-        core::vector3df(-10, 30, -15), // Position the light up and to the side
-        video::SColorf(1.0f, 1.0f, 1.0f), // White light
-        12.0f // Radius
+    // Define the *vertical* size of the view.
+    // The horizontal size will be calculated from this.
+    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
+    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
+
+    core::matrix4 orthoMatrix;
+    orthoMatrix.buildProjectionMatrixOrthoLH(
+        orthoViewWidth,         // Calculated Width
+        orthoViewHeight,        // Fixed Height
+        camera->getNearValue(), // Near clip plane
+        camera->getFarValue()   // Far clip plane
     );
-    light->enableCastShadow(true); // Tell the light to cast shadows
+    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
+
+    //// Add camera - positioned closer to see the mesh better
+    //ICameraSceneNode* camera = smgr->addCameraSceneNode(
+    //    0,
+    //    vector3df(8, 8, 8),
+    //    vector3df(0, 0, 0)
+    //);
+
+    //// Set the aspect ratio for the perspective camera
+    //camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
+
+    //scene::ILightSceneNode* light = smgr->addLightSceneNode(
+    //    0,
+    //    core::vector3df(-10, 30, -15), // Position the light up and to the side
+    //    video::SColorf(1.0f, 1.0f, 1.0f), // White light
+    //    12.0f // Radius
+    //);
+    //light->enableCastShadow(true); // Tell the light to cast shadows
 
     /* ===============================
     LEVEL MESH SETUP (Moved from Pathfinding)
@@ -141,7 +167,7 @@ int main() {
 
     scene::IMeshSceneNode* levelNode = smgr->addMeshSceneNode(levelMesh);
     if (levelNode) {
-        levelNode->setMaterialFlag(EMF_LIGHTING, true);
+        levelNode->setMaterialFlag(EMF_LIGHTING, false);
         // Set its position slightly lower, as requested
         levelNode->setPosition(core::vector3df(0, 0, 0));
         levelNode->setID(IDFlag_IsPickable);
