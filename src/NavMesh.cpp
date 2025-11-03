@@ -1,178 +1,112 @@
 #include "NavMesh.h"
+#include <irrlicht.h> // For Irrlicht types
 
-NavMesh::NavMesh() {
-    _verts = 0;
-    _tris = 0;
-    
-    _ctx = 0;
-    _keepInterResults = true;
-    _totalBuildTimeMs = 0;
-    _triareas = 0;
-    
-    _solid = 0;
-    _chf = 0;
-    _cset = 0;
-    _pmesh = 0;
-    _dmesh = 0;
-    rcContext* ctx;
-    
-    _ctx = new rcContext();
-    
-    this->_resetCommonSettings();
+// Use explicit namespaces
+using irr::core::vector3df;
+using irr::core::matrix4;
+using irr::scene::ISceneNode;
+using irr::scene::IMeshSceneNode;
+
+NavMesh::NavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
+    : irr::scene::ISceneNode(parent, mgr, id), // Call the base constructor
+    _ctx(new rcContext()),
+    _totalBuildTimeMs(0.0f)
+{
+    // This node is invisible by default
+    setVisible(true);
 }
 
 NavMesh::~NavMesh()
 {
-	_cleanup();
 }
 
-bool NavMesh::load(scene::IMeshSceneNode* levelNode, scene::ISceneManager* smgr)
+void NavMesh::OnRegisterSceneNode()
 {
-    _ctx = new rcContext();
-    _resetCommonSettings();
+    // Always register children, even if parent is invisible
+    ISceneNode::OnRegisterSceneNode();
 
-    if (levelNode)
+    // Only register self if visible (which it isn't, but children still render)
+    if (IsVisible)
+        SceneManager->registerNodeForRendering(this);
+}
+
+void NavMesh::render()
+{
+}
+
+const irr::core::aabbox3d<irr::f32>& NavMesh::getBoundingBox() const
+{
+    return _box;
+}
+
+bool NavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
+{
+    if (!levelNode)
     {
-        if (_handleBuild(levelNode))
-        {
-            printf("PASSED::_handleBuild(levelNode)\n");
-            scene::SMesh* smesh = new scene::SMesh();
-            if (!_setupIrrSMeshFromRecastDetailMesh(smesh))
-            {
-                printf("_setupIrrSMeshFromRecastDetailMesh(smesh): FAILED!\n");
-                return false;
-            }
-            else
-            {
-                printf("_setupIrrSMeshFromRecastDetailMesh(smesh): PASSED!\n");
-                _naviDebugData = smgr->addOctreeSceneNode(smesh);
-                _naviDebugData->setName("Terrain");
-                _naviDebugData->setDebugDataVisible(scene::EDS_MESH_WIRE_OVERLAY);
-                _naviDebugData->setPosition(core::vector3df(0, -1, 0));
-            }
-            smesh->drop();
-        }
-        else {
-            printf("ERROR::_handleBuild(levelNode)\n");
-            return false;
-        }
-    }
-    else {
-        printf("ERROR::levelNode is null\n");
+        printf("ERROR: NavMesh::build: levelNode is null.\n");
         return false;
     }
 
-    return true;
-}
+    _params = params;
+    _totalBuildTimeMs = 0.0f;
 
-std::vector<irr::core::vector3df> NavMesh::getPath(irr::core::vector3df start, irr::core::vector3df end)
-{
-    return _returnPath(start, end);
-}
+    // Clear all previous build data
+    // The .reset() calls will trigger the custom deleters on any existing data.
+    _solid.reset();
+    _chf.reset();
+    _cset.reset();
+    _pmesh.reset();
+    _dmesh.reset();
+    _navMesh.reset();
+    _navQuery.reset();
 
-void NavMesh::renderDebugPath(std::vector<irr::core::vector3df> path, video::IVideoDriver* driver)
-{
-    for (int i = 0; i < path.size(); i++) {
-        if ((i + 1) == (int)path.size()) {
-            break;
-        }
-        video::SMaterial m;
-        m.Lighting = false;
-        driver->setMaterial(m);
-        driver->setTransform(video::ETS_WORLD, core::matrix4());
-        core::vector3df n1 = core::vector3df(path[i].X, path[i].Y, path[i].Z);
-        core::vector3df n2 = core::vector3df(path[i + 1].X, path[i + 1].Y, path[i + 1].Z);
-        driver->draw3DLine(n1, n2, video::SColor(255, 0, 0, 255));
-    };
-}
-
-void NavMesh::_cleanup()
-{
-	if (_verts) { delete[] _verts; _verts = 0; }
-	if (_tris) { delete[] _tris; _tris = 0; }
-
-	delete[] _triareas;
-	
-	_triareas = 0;
-	rcFreeHeightField(_solid);
-	_solid = 0;
-	rcFreeCompactHeightfield(_chf);
-	_chf = 0;
-	rcFreeContourSet(_cset);
-	_cset = 0;
-	rcFreePolyMesh(_pmesh);
-	_pmesh = 0;
-	rcFreePolyMeshDetail(_dmesh);
-	_dmesh = 0;
-}
-
-bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
-{
-    _cleanup();
-
-    std::vector<float> vs;
-    std::vector<int> ts;
-    int nverts;
-    int ntris;
-
-    if (!this->_getMeshBufferData(node, vs, nverts, ts, ntris))
+    // Remove old debug mesh if it exists
+    if (_naviDebugData)
     {
-        printf("getMeshBufferData() failed!\n");
+        _naviDebugData->remove();
+        _naviDebugData = nullptr;
+    }
+
+    //
+    // Step 1. Extract Irrlicht geometry
+    //
+    _verts.clear();
+    _tris.clear();
+    if (!this->_getMeshBufferData(levelNode, _verts, _tris))
+    {
+        printf("ERROR: NavMesh::build: _getMeshBufferData() failed.\n");
         return false;
     }
 
-    // populate verts and tris:
-    _verts = new float[nverts];
-    for (int n = 0; n < nverts; ++n)
-    {
-        _verts[n] = vs[n];
-    }
+    int nverts = _verts.size() / 3;
+    int ntris = _tris.size() / 3;
 
-    _tris = new int[ntris * 3];
-    for (int n = 0; n < ntris; ++n)
-    {
-        _tris[n * 3] = ts[n * 3];
-        _tris[n * 3 + 1] = ts[n * 3 + 1];
-        _tris[n * 3 + 2] = ts[n * 3 + 2];
-    }
-    printf("vs.size()=%i,nverts=%i\n", vs.size(), nverts);
-    printf("ts.size()=%i,ntris=%i\n", ts.size(), ntris);
-    float bmin[3];
-    float bmax[3];
-
-    rcCalcBounds(_verts, nverts / 3, bmin, bmax);
+    float bmin[3], bmax[3];
+    rcCalcBounds(_verts.data(), nverts, bmin, bmax);
 
     //
-    // Step 1. Initialize build config.
+    // Step 2. Initialize build config.
     //
-
-    // Init build configuration from GUI
     memset(&_cfg, 0, sizeof(_cfg));
-    _cfg.cs = _cellSize;
-    _cfg.ch = _cellHeight;
-    _cfg.walkableSlopeAngle = _agentMaxSlope;
-    _cfg.walkableHeight = (int)ceilf(_agentHeight / _cfg.ch);
-    _cfg.walkableClimb = (int)floorf(_agentMaxClimb / _cfg.ch);
-    _cfg.walkableRadius = (int)ceilf(_agentRadius / _cfg.cs);
-    _cfg.maxEdgeLen = (int)(_edgeMaxLen / _cellSize);
-    _cfg.maxSimplificationError = _edgeMaxError;
-    _cfg.minRegionArea = (int)rcSqr(_regionMinSize);      // Note: area = size*size
-    _cfg.mergeRegionArea = (int)rcSqr(_regionMergeSize);  // Note: area = size*size
-    _cfg.maxVertsPerPoly = (int)_vertsPerPoly;
-    _cfg.detailSampleDist = _detailSampleDist < 0.9f ? 0 : _cellSize * _detailSampleDist;
-    _cfg.detailSampleMaxError = _cellHeight * _detailSampleMaxError;
+    _cfg.cs = _params.CellSize;
+    _cfg.ch = _params.CellHeight;
+    _cfg.walkableSlopeAngle = _params.AgentMaxSlope;
+    _cfg.walkableHeight = (int)ceilf(_params.AgentHeight / _cfg.ch);
+    _cfg.walkableClimb = (int)floorf(_params.AgentMaxClimb / _cfg.ch);
+    _cfg.walkableRadius = (int)ceilf(_params.AgentRadius / _cfg.cs);
+    _cfg.maxEdgeLen = (int)(_params.EdgeMaxLen / _cfg.cs);
+    _cfg.maxSimplificationError = _params.EdgeMaxError;
+    _cfg.minRegionArea = (int)rcSqr(_params.RegionMinSize);
+    _cfg.mergeRegionArea = (int)rcSqr(_params.RegionMergeSize);
+    _cfg.maxVertsPerPoly = (int)_params.VertsPerPoly;
+    _cfg.detailSampleDist = _params.DetailSampleDist < 0.9f ? 0 : _cfg.cs * _params.DetailSampleDist;
+    _cfg.detailSampleMaxError = _cfg.ch * _params.DetailSampleMaxError;
 
-    // Set the area where the navigation will be build.
-    // Here the bounds of the input mesh are used, but the
-    // area could be specified by an user defined box, etc.
     rcVcopy(_cfg.bmin, bmin);
     rcVcopy(_cfg.bmax, bmax);
     rcCalcGridSize(_cfg.bmin, _cfg.bmax, _cfg.cs, &_cfg.width, &_cfg.height);
 
-    // Reset build times gathering.
     _ctx->resetTimers();
-
-    // Start the build process.
     _ctx->startTimer(RC_TIMER_TOTAL);
 
     _ctx->log(RC_LOG_PROGRESS, "Building navigation:");
@@ -180,101 +114,69 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
     _ctx->log(RC_LOG_PROGRESS, " - %.1fK verts, %.1fK tris", nverts / 1000.0f, ntris / 1000.0f);
 
     //
-    // Step 2. Rasterize input polygon soup.
+    // Step 3. Rasterize input polygon soup.
     //
-
-    // Allocate voxel heightfield where we rasterize our input data to.
-    _solid = rcAllocHeightfield();
+    _solid.reset(rcAllocHeightfield());
     if (!_solid)
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'solid'.");
         return false;
     }
-    if (!rcCreateHeightfield(_ctx, *_solid, _cfg.width, _cfg.height, _cfg.bmin, _cfg.bmax, _cfg.cs, _cfg.ch))
+    if (!rcCreateHeightfield(_ctx.get(), *_solid, _cfg.width, _cfg.height, _cfg.bmin, _cfg.bmax, _cfg.cs, _cfg.ch))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not create solid heightfield.");
         return false;
     }
 
-    // Allocate array that can hold triangle area types.
-    // If you have multiple meshes you need to process, allocate
-    // and array which can hold the max number of triangles you need to process.
-    _triareas = new unsigned char[ntris];
-    if (!_triareas)
+    _triareas.resize(ntris);
+
+    memset(_triareas.data(), 0, ntris * sizeof(unsigned char));
+    rcMarkWalkableTriangles(_ctx.get(), _cfg.walkableSlopeAngle, _verts.data(), nverts, _tris.data(), ntris, _triareas.data());
+    rcRasterizeTriangles(_ctx.get(), _verts.data(), nverts, _tris.data(), _triareas.data(), ntris, *_solid, _cfg.walkableClimb);
+
+    this->_showHeightFieldInfo(*_solid);
+
+    if (!_params.KeepInterResults)
     {
-        _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory '_triareas' (%d).", ntris);
-        return false;
-    }
-
-    // Find triangles which are walkable based on their slope and rasterize them.
-    // If your input data is multiple meshes, you can transform them here, calculate
-    // the are type for each of the meshes and rasterize them.
-    memset(_triareas, 0, ntris * sizeof(unsigned char));
-    rcMarkWalkableTriangles(_ctx, _cfg.walkableSlopeAngle, _verts, nverts, _tris, ntris, _triareas);
-    rcRasterizeTriangles(_ctx, _verts, nverts, _tris, _triareas, ntris, *_solid, _cfg.walkableClimb);
-
-    this->_showHeightFieldInfo(*_solid); //<-----------------------------------------------------------------------------------------
-
-    if (!_keepInterResults)
-    {
-        delete[] _triareas;
-        _triareas = 0;
+        _triareas.clear();
     }
 
     //
-    // Step 3. Filter walkables surfaces.
+    // Step 4. Filter walkables surfaces.
     //
-
-    // Once all geoemtry is rasterized, we do initial pass of filtering to
-    // remove unwanted overhangs caused by the conservative rasterization
-    // as well as filter spans where the character cannot possibly stand.
-    rcFilterLowHangingWalkableObstacles(_ctx, _cfg.walkableClimb, *_solid);
-    rcFilterLedgeSpans(_ctx, _cfg.walkableHeight, _cfg.walkableClimb, *_solid);
-    rcFilterWalkableLowHeightSpans(_ctx, _cfg.walkableHeight, *_solid);
-
+    rcFilterLowHangingWalkableObstacles(_ctx.get(), _cfg.walkableClimb, *_solid);
+    rcFilterLedgeSpans(_ctx.get(), _cfg.walkableHeight, _cfg.walkableClimb, *_solid);
+    rcFilterWalkableLowHeightSpans(_ctx.get(), _cfg.walkableHeight, *_solid);
 
     //
-    // Step 4. Partition walkable surface to simple regions.
+    // Step 5. Partition walkable surface to simple regions.
     //
-
-    // Compact the heightfield so that it is faster to handle from now on.
-    // This will result more cache coherent data as well as the neighbours
-    // between walkable cells will be calculated.
-    _chf = rcAllocCompactHeightfield();
+    _chf.reset(rcAllocCompactHeightfield());
     if (!_chf)
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'chf'.");
         return false;
     }
-    if (!rcBuildCompactHeightfield(_ctx, _cfg.walkableHeight, _cfg.walkableClimb, *_solid, *_chf))
+    if (!rcBuildCompactHeightfield(_ctx.get(), _cfg.walkableHeight, _cfg.walkableClimb, *_solid, *_chf))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build compact data.");
         return false;
     }
 
-    if (!_keepInterResults)
+    if (!_params.KeepInterResults)
     {
-        rcFreeHeightField(_solid);
-        _solid = 0;
+        _solid.reset(); // Frees the heightfield
     }
 
-    // Erode the walkable area by agent radius.
-    if (!rcErodeWalkableArea(_ctx, _cfg.walkableRadius, *_chf))
+    if (!rcErodeWalkableArea(_ctx.get(), _cfg.walkableRadius, *_chf))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not erode.");
         return false;
     }
 
-    // (Optional) Mark areas.
-    //const ConvexVolume* vols = m_geom->getConvexVolumes();
-    //for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
-    //rcMarkConvexPolyArea(_ctx, vols[i].verts, vols[i].nverts, vols[i].hmin, vols[i].hmax, (unsigned char)vols[i].area, *_chf);
-
-    if (_monotonePartitioning)
+    if (_params.MonotonePartitioning)
     {
-        // Partition the walkable surface into simple regions without holes.
-        // Monotone partitioning does not need distancefield.
-        if (!rcBuildRegionsMonotone(_ctx, *_chf, 0, _cfg.minRegionArea, _cfg.mergeRegionArea))
+        if (!rcBuildRegionsMonotone(_ctx.get(), *_chf, 0, _cfg.minRegionArea, _cfg.mergeRegionArea))
         {
             _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build regions.");
             return false;
@@ -282,15 +184,12 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
     }
     else
     {
-        // Prepare for region partitioning, by calculating distance field along the walkable surface.
-        if (!rcBuildDistanceField(_ctx, *_chf))
+        if (!rcBuildDistanceField(_ctx.get(), *_chf))
         {
             _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build distance field.");
             return false;
         }
-
-        // Partition the walkable surface into simple regions without holes.
-        if (!rcBuildRegions(_ctx, *_chf, 0, _cfg.minRegionArea, _cfg.mergeRegionArea))
+        if (!rcBuildRegions(_ctx.get(), *_chf, 0, _cfg.minRegionArea, _cfg.mergeRegionArea))
         {
             _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build regions.");
             return false;
@@ -298,109 +197,86 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
     }
 
     //
-    // Step 5. Trace and simplify region contours.
+    // Step 6. Trace and simplify region contours.
     //
-
-    // Create contours.
-    _cset = rcAllocContourSet();
+    _cset.reset(rcAllocContourSet());
     if (!_cset)
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'cset'.");
         return false;
     }
-    if (!rcBuildContours(_ctx, *_chf, _cfg.maxSimplificationError, _cfg.maxEdgeLen, *_cset))
+    if (!rcBuildContours(_ctx.get(), *_chf, _cfg.maxSimplificationError, _cfg.maxEdgeLen, *_cset))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not create contours.");
         return false;
     }
     printf("_cset->nconts=%i\n", _cset->nconts);
-    //
-    // Step 6. Build polygons mesh from contours.
-    //
 
-    // Build polygon navmesh from the contours.
-    _pmesh = rcAllocPolyMesh();
+    //
+    // Step 7. Build polygons mesh from contours.
+    //
+    _pmesh.reset(rcAllocPolyMesh());
     if (!_pmesh)
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'pmesh'.");
         return false;
     }
-    if (!rcBuildPolyMesh(_ctx, *_cset, _cfg.maxVertsPerPoly, *_pmesh))
+    if (!rcBuildPolyMesh(_ctx.get(), *_cset, _cfg.maxVertsPerPoly, *_pmesh))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not triangulate contours.");
         return false;
     }
 
     //
-    // Step 7. Create detail mesh which allows to access approximate height on each polygon.
+    // Step 8. Create detail mesh.
     //
-
-    _dmesh = rcAllocPolyMeshDetail();
+    _dmesh.reset(rcAllocPolyMeshDetail());
     if (!_dmesh)
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'pmdtl'.");
         return false;
     }
-
-    if (!rcBuildPolyMeshDetail(_ctx, *_pmesh, *_chf, _cfg.detailSampleDist, _cfg.detailSampleMaxError, *_dmesh))
+    if (!rcBuildPolyMeshDetail(_ctx.get(), *_pmesh, *_chf, _cfg.detailSampleDist, _cfg.detailSampleMaxError, *_dmesh))
     {
         _ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build detail mesh.");
         return false;
     }
 
-    if (!_keepInterResults)
+    if (!_params.KeepInterResults)
     {
-        rcFreeCompactHeightfield(_chf);
-        _chf = 0;
-        rcFreeContourSet(_cset);
-        _cset = 0;
+        _chf.reset();
+        _cset.reset();
     }
 
-
-    // At this point the navigation mesh data is ready, you can access it from _pmesh.
-    // See duDebugDrawPolyMesh or dtCreateNavMeshData as examples how to access the data.
     //
-    // (Optional) Step 8. Create Detour data from Recast poly mesh.
+    // Step 9. Create Detour data from Recast poly mesh.
     //
-    // ...
-
-    //
-    // (Optional) Step 8. Create Detour data from Recast poly mesh.
-    //
-
-    // The GUI may allow more max points per polygon than Detour can handle.
-    // Only build the detour navmesh if we do not exceed the limit.
     if (_cfg.maxVertsPerPoly <= DT_VERTS_PER_POLYGON)
     {
-        unsigned char* navData = 0;
+        unsigned char* navData = nullptr;
         int navDataSize = 0;
 
-        // Update poly flags from areas.
         for (int i = 0; i < _pmesh->npolys; ++i)
         {
             if (_pmesh->areas[i] == RC_WALKABLE_AREA)
-                _pmesh->areas[i] = SAMPLE_POLYAREA_GROUND;
+                _pmesh->areas[i] = (unsigned char)SamplePolyAreas::GROUND;
 
-            if (_pmesh->areas[i] == SAMPLE_POLYAREA_GROUND ||
-                _pmesh->areas[i] == SAMPLE_POLYAREA_GRASS ||
-                _pmesh->areas[i] == SAMPLE_POLYAREA_ROAD)
+            if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::GROUND ||
+                _pmesh->areas[i] == (unsigned char)SamplePolyAreas::GRASS ||
+                _pmesh->areas[i] == (unsigned char)SamplePolyAreas::ROAD)
             {
-                _pmesh->flags[i] = SAMPLE_POLYFLAGS_WALK;
+                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::WALK;
             }
-            else if (_pmesh->areas[i] == SAMPLE_POLYAREA_WATER)
+            else if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::WATER)
             {
-                _pmesh->flags[i] = SAMPLE_POLYFLAGS_SWIM;
+                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::SWIM;
             }
-            else if (_pmesh->areas[i] == SAMPLE_POLYAREA_DOOR)
+            else if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::DOOR)
             {
-                _pmesh->flags[i] = SAMPLE_POLYFLAGS_WALK | SAMPLE_POLYFLAGS_DOOR;
+                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR;
             }
         }
 
-        //  InputGeom* geom = new InputGeom;
-
-
-            //m_geom->raycastMesh()
         dtNavMeshCreateParams params;
         memset(&params, 0, sizeof(params));
         params.verts = _pmesh->verts;
@@ -416,17 +292,9 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
         params.detailTris = _dmesh->tris;
         params.detailTriCount = _dmesh->ntris;
 
-        params.offMeshConAreas = 0;
-        params.offMeshConCount = 0;
-        params.offMeshConDir = 0;
-        params.offMeshConFlags = 0;
-        params.offMeshConRad = 0;
-        params.offMeshConUserID = 0;
-        params.offMeshConVerts = 0;
-
-        params.walkableHeight = _agentHeight;
-        params.walkableRadius = _agentRadius;
-        params.walkableClimb = _agentMaxClimb;
+        params.walkableHeight = _params.AgentHeight;
+        params.walkableRadius = _params.AgentRadius;
+        params.walkableClimb = _params.AgentMaxClimb;
         rcVcopy(params.bmin, _pmesh->bmin);
         rcVcopy(params.bmax, _pmesh->bmax);
         params.cs = _cfg.cs;
@@ -439,7 +307,7 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
             return false;
         }
 
-        _navMesh = dtAllocNavMesh();
+        _navMesh.reset(dtAllocNavMesh());
         if (!_navMesh)
         {
             dtFree(navData);
@@ -447,10 +315,21 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
             return false;
         }
 
+        if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not build Detour navmesh.");
+            return false;
+        }
 
-        dtStatus status;
+        _navMesh.reset(dtAllocNavMesh());
+        if (!_navMesh)
+        {
+            dtFree(navData);
+            _ctx->log(RC_LOG_ERROR, "Could not create Detour navmesh");
+            return false;
+        }
 
-        status = _navMesh->init(navData, navDataSize, DT_TILE_FREE_DATA);
+        dtStatus status = _navMesh->init(navData, navDataSize, DT_TILE_FREE_DATA);
         if (dtStatusFailed(status))
         {
             dtFree(navData);
@@ -458,151 +337,386 @@ bool NavMesh::_handleBuild(irr::scene::IMeshSceneNode* node)
             return false;
         }
 
-        _navQuery = dtAllocNavMeshQuery();
-        status = _navQuery->init(_navMesh, 2048);
+        // --- (NAVQUERY IS STILL NEEDED) ---
+        _navQuery.reset(dtAllocNavMeshQuery());
+        status = _navQuery->init(_navMesh.get(), 2048);
         if (dtStatusFailed(status))
         {
             _ctx->log(RC_LOG_ERROR, "Could not init Detour navmesh query");
             return false;
         }
 
+        // --- (NEW) INITIALIZE CROWD ---
+        _crowd.reset(dtAllocCrowd());
+        if (!_crowd)
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not alloc crowd");
+            return false;
+        }
+
+        // Init the crowd with max agents, agent radius, and the navmesh
+        // Note: The agent radius here is a 'max' radius. We'll set specifics in addAgent.
+        if (!_crowd->init(MAX_AGENTS, _params.AgentRadius, _navMesh.get()))
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not init crowd");
+            return false;
+        }
     }
 
-
     _ctx->stopTimer(RC_TIMER_TOTAL);
-
-    // Show performance stats.
+    _totalBuildTimeMs = _ctx->getAccumulatedTime(RC_TIMER_TOTAL) / 1000.0f;
     _ctx->log(RC_LOG_PROGRESS, ">> Polymesh: %d vertices  %d polygons", _pmesh->nverts, _pmesh->npolys);
 
-    _totalBuildTimeMs = _ctx->getAccumulatedTime(RC_TIMER_TOTAL) / 1000.0f;
-
-    // irr part:
-    printf("RC_LOG_PROGRESS >> Polymesh: %d vertices  %d polygons\n", _pmesh->nverts, _pmesh->npolys);
     return true;
 }
 
-void NavMesh::_resetCommonSettings()
+std::vector<vector3df> NavMesh::findPath(vector3df pStart, vector3df pEnd)
 {
-    _cellSize = NavMeshDefaults::CellSize;
-    _cellHeight = NavMeshDefaults::CellHeight;
-    _agentHeight = NavMeshDefaults::AgentHeight;
-    _agentRadius = NavMeshDefaults::AgentRadius;
-    _agentMaxClimb = NavMeshDefaults::AgentMaxClimb;
-    _agentMaxSlope = NavMeshDefaults::AgentMaxSlope;
-    _regionMinSize = NavMeshDefaults::RegionMinSize;
-    _regionMergeSize = NavMeshDefaults::RegionMergeSize;
-    _monotonePartitioning = NavMeshDefaults::MonotonePartitioning;
-    _edgeMaxLen = NavMeshDefaults::EdgeMaxLen;
-    _edgeMaxError = NavMeshDefaults::EdgeMaxError;
-    _vertsPerPoly = NavMeshDefaults::VertsPerPoly;
-    _detailSampleDist = NavMeshDefaults::DetailSampleDist;
-    _detailSampleMaxError = NavMeshDefaults::DetailSampleMaxError;
+    std::vector<vector3df> lstPoints;
+    if (!_navQuery || !_navMesh)
+    {
+        return lstPoints; // Not initialized
+    }
+
+    dtQueryFilter filter;
+    dtPolyRef startRef, endRef;
+    const int MAX_POLYS = 256;
+    dtPolyRef returnedPath[MAX_POLYS];
+    float straightPath[MAX_POLYS * 3];
+    int numStraightPaths = 0;
+    int pathCount = 0;
+
+    float spos[3] = { pStart.X, pStart.Y, pStart.Z };
+    float epos[3] = { pEnd.X, pEnd.Y, pEnd.Z };
+    float polyPickExt[3] = { 2.0f, 4.0f, 2.0f };
+
+    _navQuery->findNearestPoly(spos, polyPickExt, &filter, &startRef, nullptr);
+    if (startRef == 0)
+    {
+        printf("WARNING: NavMesh::findPath: Could not find start polygon.\n");
+        return lstPoints;
+    }
+
+    _navQuery->findNearestPoly(epos, polyPickExt, &filter, &endRef, nullptr);
+    if (endRef == 0)
+    {
+        printf("WARNING: NavMesh::findPath: Could not find end polygon.\n");
+        return lstPoints;
+    }
+
+    dtStatus findStatus = _navQuery->findPath(startRef, endRef, spos, epos, &filter, returnedPath, &pathCount, MAX_POLYS);
+
+    if (dtStatusFailed(findStatus) || pathCount == 0)
+    {
+        printf("WARNING: NavMesh::findPath: Could not find path.\n");
+        return lstPoints;
+    }
+
+    findStatus = _navQuery->findStraightPath(spos, epos, returnedPath,
+        pathCount, straightPath, nullptr, nullptr, &numStraightPaths, MAX_POLYS);
+
+    if (dtStatusFailed(findStatus))
+    {
+        printf("WARNING: NavMesh::findPath: Could not find straight path.\n");
+        return lstPoints;
+    }
+
+    for (int i = 0; i < numStraightPaths; ++i)
+    {
+        vector3df cpos(straightPath[i * 3], straightPath[i * 3 + 1] + 0.25, // Small offset
+            straightPath[i * 3 + 2]);
+        lstPoints.push_back(cpos);
+    }
+
+    return lstPoints;
 }
 
-bool NavMesh::_getMeshBufferData(irr::scene::IMeshSceneNode* node, std::vector<float>& verts, int& nverts, std::vector<int>& tris, int& ntris)
+void NavMesh::renderDebugPath(const std::vector<vector3df>& path, irr::video::IVideoDriver* driver)
 {
-    if (!node)
+    if (path.size() < 2)
     {
-        printf("_getMeshBufferData: node is null\n");
-        return false;
+        return;
     }
-    scene::IMesh* mesh = node->getMesh();
-    if (!mesh)
+
+    irr::video::SMaterial m;
+    m.Lighting = false;
+    driver->setMaterial(m);
+    driver->setTransform(irr::video::ETS_WORLD, matrix4());
+
+    for (size_t i = 0; i < path.size() - 1; ++i)
     {
-        printf("_getMeshBufferData: mesh is null\n");
-        return false;
+        driver->draw3DLine(path[i], path[i + 1], irr::video::SColor(255, 255, 0, 0));
     }
-    // Get the node's world transformation matrix
-    core::matrix4 transform = node->getAbsoluteTransformation();
-    nverts = 0;
-    ntris = 0;
-    int vertexOffset = 0; // Offset for indices as we add vertices from multiple buffers
-    // Iterate over ALL mesh buffers
-    for (u32 i = 0; i < mesh->getMeshBufferCount(); ++i)
+}
+
+ISceneNode* NavMesh::createDebugMeshNode()
+{
+    if (!SceneManager)
     {
-        scene::IMeshBuffer* buffer = mesh->getMeshBuffer(i);
-        int currentVertCount = buffer->getVertexCount();
-        int currentTriCount = buffer->getIndexCount() / 3;
-        if ((currentVertCount <= 0) || (currentTriCount <= 0))
+        printf("ERROR: NavMesh::createDebugMeshNode: SceneManager is null.\n");
+        return nullptr;
+    }
+    if (!_dmesh)
+    {
+        printf("WARNING: NavMesh::createDebugMeshNode: No detail mesh data to build from.\n");
+        return nullptr;
+    }
+
+    // Remove old debug mesh if it exists
+    if (_naviDebugData)
+    {
+        _naviDebugData->remove();
+        _naviDebugData = nullptr;
+    }
+
+    irr::scene::SMesh* smesh = new irr::scene::SMesh();
+    if (!_setupIrrSMeshFromRecastDetailMesh(smesh))
+    {
+        printf("ERROR: NavMesh::createDebugMeshNode: _setupIrrSMeshFromRecastDetailMesh failed.\n");
+        smesh->drop();
+        return nullptr;
+    }
+
+    _naviDebugData = SceneManager->addMeshSceneNode(smesh, this); // Use regular mesh node instead of octree
+
+    if (_naviDebugData)
+    {
+        _naviDebugData->setName("NavMeshDebugNode");
+        _naviDebugData->setMaterialFlag(irr::video::EMF_LIGHTING, false);
+        _naviDebugData->setMaterialFlag(irr::video::EMF_WIREFRAME, true);
+        _naviDebugData->setPosition(irr::core::vector3df(0, 0.1f, 0));
+        _naviDebugData->setVisible(true); // Explicitly set visible
+
+        printf("Debug mesh created with %d vertices\n", smesh->getMeshBuffer(0)->getVertexCount());
+    }
+
+    smesh->drop();
+    return _naviDebugData;
+}
+
+int NavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float height)
+{
+    if (!_crowd || !node)
+        return -1;
+
+    dtCrowdAgentParams ap;
+    memset(&ap, 0, sizeof(ap));
+    ap.radius = radius;
+    ap.height = height;
+    ap.maxAcceleration = 20.0f;
+    ap.maxSpeed = 3.5f; // You can make this a parameter
+    ap.collisionQueryRange = ap.radius * 12.0f;
+    ap.pathOptimizationRange = ap.radius * 30.0f;
+    ap.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE;
+
+    vector3df pos = node->getPosition();
+    float irrPos[3] = { pos.X, pos.Y - 0.5f, pos.Z }; // Assume position is center, adjust to feet
+
+    int id = _crowd->addAgent(irrPos, &ap);
+    if (id != -1)
+    {
+        _agentNodeMap[id] = node;
+    }
+    return id;
+}
+
+void NavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
+{
+    if (!_crowd || !_navQuery || agentId == -1)
+        return;
+
+    // Find the nearest polygon to the target position
+    float pos[3] = { targetPos.X, targetPos.Y, targetPos.Z };
+    float ext[3] = { 2.0f, 4.0f, 2.0f }; // Search extent
+    dtPolyRef targetRef;
+    float nearestPt[3];
+    dtQueryFilter filter;
+
+    _navQuery->findNearestPoly(pos, ext, &filter, &targetRef, nearestPt);
+
+    if (targetRef)
+    {
+        // Request the agent to move to the new target
+        _crowd->requestMoveTarget(agentId, targetRef, nearestPt);
+    }
+    else
+    {
+        printf("WARNING: NavMesh::setAgentTarget: Could not find poly for target.\n");
+    }
+}
+
+void NavMesh::update(float deltaTime)
+{
+    if (!_crowd)
+        return;
+
+    // Update the crowd simulation
+    _crowd->update(deltaTime, nullptr);
+
+    // Update all Irrlicht nodes based on their agent's new position
+    for (auto const& [id, node] : _agentNodeMap)
+    {
+        const dtCrowdAgent* agent = _crowd->getAgent(id);
+        if (!agent || !agent->active)
+            continue;
+
+        // Get agent's position (at their feet)
+        const float* pos = agent->npos;
+
+        // Update the scene node's position
+        // We add the agent's radius to the Y pos to place the sphere's *center*
+        // This assumes the sphere's origin is its center.
+        node->setPosition(vector3df(pos[0], pos[1] + agent->params.radius, pos[2]));
+    }
+}
+
+void NavMesh::renderCrowdDebug(irr::video::IVideoDriver* driver)
+{
+    if (!_crowd || !driver)
+        return;
+
+    // Setup material for drawing lines
+    irr::video::SMaterial m;
+    m.Lighting = false;
+    driver->setMaterial(m);
+    driver->setTransform(irr::video::ETS_WORLD, matrix4());
+
+    // Iterate over all active agents
+    for (int i = 0; i < _crowd->getAgentCount(); ++i)
+    {
+        const dtCrowdAgent* agent = _crowd->getAgent(i);
+        if (!agent || !agent->active)
+            continue;
+
+        // --- THE FIX ---
+
+        // Check the number of corners
+        if (agent->ncorners < 2) // Need at least 2 points to draw a line
+            continue;
+
+        // Get the path corners from agent->cornerVerts
+        const float* pathPoints = agent->cornerVerts;
+
+        // Draw lines between the waypoints
+        for (int j = 0; j < agent->ncorners - 1; ++j)
         {
-            continue; // Skip empty buffers
+            // Points are (x, y, z)
+            vector3df start(
+                pathPoints[j * 3],
+                pathPoints[j * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
+                pathPoints[j * 3 + 2]
+            );
+            vector3df end(
+                pathPoints[(j + 1) * 3],
+                pathPoints[(j + 1) * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
+                pathPoints[(j + 1) * 3 + 2]
+            );
+
+            // Draw a yellow line for the path
+            driver->draw3DLine(start, end, irr::video::SColor(255, 255, 0, 0));
         }
-        // Add vertices
-        for (int j = 0; j < currentVertCount; ++j)
+    }
+}
+
+
+bool NavMesh::_getMeshBufferData(
+    IMeshSceneNode* node,
+    std::vector<float>& verts,
+    std::vector<int>& tris)
+{
+    if (!node) return false;
+    irr::scene::IMesh* mesh = node->getMesh();
+    if (!mesh) return false;
+
+    matrix4 transform = node->getAbsoluteTransformation();
+    verts.clear();
+    tris.clear();
+
+    irr::u32 vertexOffset = 0;
+
+    for (irr::u32 i = 0; i < mesh->getMeshBufferCount(); ++i)
+    {
+        irr::scene::IMeshBuffer* buffer = mesh->getMeshBuffer(i);
+        irr::u32 currentVertCount = buffer->getVertexCount();
+        irr::u32 currentIdxCount = buffer->getIndexCount();
+
+        if (currentVertCount == 0 || currentIdxCount == 0)
         {
-            core::vector3df pos = buffer->getPosition(j);
-            // Apply world transformation to the vertex
+            continue;
+        }
+
+        // Add vertices
+        verts.reserve(verts.size() + currentVertCount * 3);
+        for (irr::u32 j = 0; j < currentVertCount; ++j)
+        {
+            vector3df pos = buffer->getPosition(j);
             transform.transformVect(pos);
             verts.push_back(pos.X);
             verts.push_back(pos.Y);
             verts.push_back(pos.Z);
         }
+
         // Add triangles (indices)
-        u16* indices = buffer->getIndices();
-        for (int j = 0; j < currentTriCount * 3; ++j)
+        tris.reserve(tris.size() + currentIdxCount);
+        if (buffer->getIndexType() == irr::video::EIT_16BIT)
         {
-            // Add the vertexOffset so indices point to the correct vertices
-            // in our combined vertex list
-            tris.push_back(indices[j] + vertexOffset);
+            irr::u16* indices = buffer->getIndices();
+            for (irr::u32 j = 0; j < currentIdxCount; ++j)
+            {
+                tris.push_back(indices[j] + vertexOffset);
+            }
         }
-        nverts += currentVertCount;
-        ntris += currentTriCount;
-        vertexOffset += currentVertCount; // Update the offset for the next buffer
+        else if (buffer->getIndexType() == irr::video::EIT_32BIT)
+        {
+            irr::u32* indices = (irr::u32*)buffer->getIndices();
+            for (irr::u32 j = 0; j < currentIdxCount; ++j)
+            {
+                tris.push_back(indices[j] + vertexOffset);
+            }
+        }
+
+        vertexOffset += currentVertCount;
     }
-    if ((nverts <= 0) || (ntris <= 0))
+
+    if (verts.empty() || tris.empty())
     {
-        printf("_getMeshBufferData: No vertices or triangles found in any buffer.\n");
+        printf("WARNING: NavMesh::_getMeshBufferData: No vertices or triangles found.\n");
         return false;
     }
-    // Update nverts to be the float count (X, Y, Z), as expected by Recast
-    nverts *= 3;
-    printf("_getMeshBufferData: Total nverts (components)=%i\n", nverts);
-    printf("_getMeshBufferData: Total ntris=%i\n", ntris);
+
+    printf("_getMeshBufferData: Total vertices=%u\n", vertexOffset);
+    printf("_getMeshBufferData: Total indices=%zu\n", tris.size());
     return true;
 }
 
 bool NavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh)
 {
-    rcPolyMeshDetail* dmesh = _dmesh;
-    if ((!smesh) || (!dmesh))
+    rcPolyMeshDetail* dmesh = _dmesh.get();
+    if (!smesh || !dmesh)
         return false;
-    scene::SMeshBuffer* buffer = new scene::SMeshBuffer();
+
+    irr::scene::SMeshBuffer* buffer = new irr::scene::SMeshBuffer();
     std::vector<float> vertsOut;
     int nvertsOut = 0;
     std::vector<int> trisOut;
     int ntrisOut = 0;
-    bool ok = _getMeshDataFromPolyMeshDetail
-    (
-        dmesh,
-        vertsOut, nvertsOut,
-        trisOut, ntrisOut
-    );
-    if (!ok)
+
+    if (!_getMeshDataFromPolyMeshDetail(dmesh, vertsOut, nvertsOut, trisOut, ntrisOut))
     {
-        printf("_setupIrrSMeshFromRecastDetailMesh(): _getMeshDataFromPolyMeshDetail() failed!\n");
+        printf("ERROR: NavMesh::_setupIrrSMeshFromRecastDetailMesh: _getMeshDataFromPolyMeshDetail failed.\n");
         buffer->drop();
         return false;
     }
-    printf("_setupIrrSMeshFromRecastDetailMesh(): vertsOut.size()=%i\n", vertsOut.size());
-    ok = _setMeshBufferData
-    (
-        *buffer, vertsOut, nvertsOut, trisOut, ntrisOut
-    );
-    if (!ok)
+
+    if (!_setMeshBufferData(*buffer, vertsOut, nvertsOut, trisOut, ntrisOut))
     {
-        printf("_setupIrrSMeshFromRecastDetailMesh(): _setMeshBufferData() failed!\n");
+        printf("ERROR: NavMesh::_setupIrrSMeshFromRecastDetailMesh: _setMeshBufferData failed.\n");
         buffer->drop();
         return false;
     }
-    // this is important:
-    // if not done, scene may disappear sometimes!
-    // recalculate bounding box
-    for (u32 n = 0; n < buffer->getVertexCount(); ++n)
-    {
-        buffer->BoundingBox.addInternalPoint(buffer->Vertices[n].Pos);
-    }
+
     smesh->addMeshBuffer(buffer);
-    smesh->setHardwareMappingHint(scene::EHM_STATIC, scene::EBT_VERTEX_AND_INDEX);
+    smesh->setHardwareMappingHint(irr::scene::EHM_STATIC, irr::scene::EBT_VERTEX_AND_INDEX);
     smesh->recalculateBoundingBox();
     buffer->drop();
     return true;
@@ -610,161 +724,90 @@ bool NavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh)
 
 void NavMesh::_showHeightFieldInfo(const rcHeightfield& hf)
 {
-    int w = hf.width;
-    int h = hf.height;
-    const float* bmin = hf.bmin;
-    const float* bmax = hf.bmax;
-    float cs = hf.cs;
-    float ch = hf.ch;
-
-    printf("rcHeightfield hf: w=%i,h=%i,bmin=(%f,%f,%f),bmax=(%f,%f,%f),cs=%f,ch=%f\n", w, h, bmin[0], bmin[1], bmin[2], bmax[0], bmax[1], bmax[2], cs, ch);
+    printf("rcHeightfield hf: w=%i,h=%i,bmin=(%f,%f,%f),bmax=(%f,%f,%f),cs=%f,ch=%f\n",
+        hf.width, hf.height, hf.bmin[0], hf.bmin[1], hf.bmin[2],
+        hf.bmax[0], hf.bmax[1], hf.bmax[2], hf.cs, hf.ch);
 }
 
-bool NavMesh::_getMeshDataFromPolyMeshDetail(rcPolyMeshDetail* dmesh, std::vector<float>& vertsOut, int& nvertsOut, std::vector<int>& trisOut, int& ntrisOut)
+bool NavMesh::_getMeshDataFromPolyMeshDetail(
+    rcPolyMeshDetail* dmesh,
+    std::vector<float>& vertsOut, int& nvertsOut,
+    std::vector<int>& trisOut, int& ntrisOut)
 {
-    printf("getMeshDataFromPolyMeshDetail(): dmesh->nmeshes=%i\n", dmesh->nmeshes);
     if (dmesh->nmeshes == 0)
     {
-        printf("getMeshDataFromPolyMeshDetail(): dmesh->nmeshes == 0\n");
+        printf("WARNING: NavMesh::_getMeshDataFromPolyMeshDetail: dmesh->nmeshes == 0.\n");
         return false;
     }
 
     nvertsOut = dmesh->nverts * 3;
-    printf("getMeshDataFromPolyMeshDetail: nvertsOut=%i\n", nvertsOut);
-
     ntrisOut = dmesh->ntris;
-    printf("getMeshDataFromPolyMeshDetail: ntrisOut=%i\n", ntrisOut);
 
-    const float* verts = dmesh->verts;
+    vertsOut.resize(nvertsOut);
+    memcpy(vertsOut.data(), dmesh->verts, nvertsOut * sizeof(float));
 
-    for (int n = 0; n < nvertsOut; ++n)
-    {
-        vertsOut.push_back(verts[n]);
-    }
+    trisOut.resize(ntrisOut * 3);
+    int triIndex = 0;
 
-
-    //FIXME:
-    int tri_offset = 0;
-    int old_nverts = 0;
     for (int p = 0; p < dmesh->nmeshes; ++p)
     {
-        unsigned int* m = &(dmesh->meshes[p * 4]);
-        const unsigned short bverts = m[0];
-        const unsigned short nverts = m[1];
-        const unsigned short btris = m[2];
-        const unsigned short ntris = m[3];
+        const unsigned int* m = &(dmesh->meshes[p * 4]);
+        const unsigned int bverts = m[0];
+        // const unsigned int nverts = m[1]; // Unused
+        const unsigned int btris = m[2];
+        const unsigned int ntris = m[3];
         const unsigned char* tris = &(dmesh->tris[btris * 4]);
 
-        tri_offset += old_nverts;
-
-        for (int n = 0; n < ntris; ++n)
+        for (unsigned int n = 0; n < ntris; ++n)
         {
-            for (int k = 0; k < 3; ++k)
-            {
-
-                int tri = tris[n * 4 + k] + tri_offset;
-                trisOut.push_back(tri);
-            }
+            // Correct logic: The triangle's vertex indices are relative to the detail mesh's
+            // vertex list, but offset by `bverts` for this submesh.
+            trisOut[triIndex++] = tris[n * 4 + 0] + bverts;
+            trisOut[triIndex++] = tris[n * 4 + 1] + bverts;
+            trisOut[triIndex++] = tris[n * 4 + 2] + bverts;
         }
-        old_nverts = nverts;
     }
 
     return true;
-
 }
 
-bool NavMesh::_setMeshBufferData(irr::scene::SMeshBuffer& buffer, const std::vector<float>& verts, int& nverts, const std::vector<int>& tris, int& ntris)
+bool NavMesh::_setMeshBufferData(
+    irr::scene::SMeshBuffer& buffer,
+    const std::vector<float>& verts, int& nverts,
+    const std::vector<int>& tris, int& ntris)
 {
-    //TODO:
-    // err handling:
     if (verts.empty() || tris.empty())
     {
         return false;
     }
 
     buffer.Vertices.set_used(nverts / 3);
-    buffer.Indices.set_used(ntris * 3); // ntris triangles!
+    buffer.Indices.set_used(ntris * 3);
 
-    for (int i = 0; i < nverts; i += 3)
+    for (int i = 0; i < nverts / 3; ++i)
     {
-        float x = verts[i];
-        float y = verts[i + 1];
-        float z = verts[i + 2];
-
-        buffer.Vertices[i / 3] = video::S3DVertex
+        buffer.Vertices[i] = irr::video::S3DVertex
         (
-            x, y, z,
-            0.0f, 1.0f, 0.0f,
-            0x8000FF00,
-            0.0f, 0.0f
+            verts[i * 3 + 0],
+            verts[i * 3 + 1],
+            verts[i * 3 + 2],
+            0.0f, 1.0f, 0.0f, // Normal
+            irr::video::SColor(255, 0, 255, 0),
+            0.0f, 0.0f        // TCoords
         );
     }
 
-
     for (int i = 0; i < ntris * 3; ++i)
     {
-        int index = tris[i];
-        buffer.Indices[i] = index;
+        buffer.Indices[i] = tris[i];
     }
-
 
     buffer.getMaterial().Lighting = false;
     buffer.getMaterial().BackfaceCulling = false;
     buffer.getMaterial().Wireframe = true;
     buffer.getMaterial().Thickness = 2.0f;
-    buffer.getMaterial().MaterialType = video::EMT_TRANSPARENT_ALPHA_CHANNEL;
+    buffer.getMaterial().MaterialType = irr::video::EMT_SOLID;
     buffer.recalculateBoundingBox();
 
     return true;
-}
-
-std::vector<irr::core::vector3df> NavMesh::_returnPath(irr::core::vector3df pStart, irr::core::vector3df pEnd)
-{
-    std::vector<irr::core::vector3df> lstPoints;
-    if (_navQuery)
-    {
-        if (_navMesh == 0)
-        {
-            return lstPoints;
-        }
-        dtQueryFilter filter;
-        dtPolyRef startRef;
-        dtPolyRef endRef;
-        const int MAX_POLYS = 256;
-        dtPolyRef polys[MAX_POLYS];
-        dtPolyRef returnedPath[MAX_POLYS];
-        float straightPath[MAX_POLYS * 3];
-        int numStraightPaths;
-        float spos[3] = { pStart.X, pStart.Y, pStart.Z };
-        float epos[3] = { pEnd.X, pEnd.Y, pEnd.Z };
-        float polyPickExt[3];
-        polyPickExt[0] = 2;
-        polyPickExt[1] = 4;
-        polyPickExt[2] = 2;
-        _navQuery->findNearestPoly(spos, polyPickExt, &filter, &startRef, 0);
-        if (startRef == 0)
-        {
-            return lstPoints;
-        }
-        _navQuery->findNearestPoly(epos, polyPickExt, &filter, &endRef, 0);
-        if (endRef == 0)
-        {
-            return lstPoints;
-        }
-        dtStatus findStatus = DT_FAILURE;
-        int pathCount;
-        findStatus = _navQuery->findPath(startRef, endRef, spos, epos, &filter, returnedPath, &pathCount, MAX_POLYS);
-        if (pathCount > 0)
-        {
-            findStatus = _navQuery->findStraightPath(spos, epos, returnedPath,
-                pathCount, straightPath, 0, 0, &numStraightPaths, MAX_POLYS);
-            for (int i = 0; i < numStraightPaths; ++i)
-            {
-                vector3df cpos(straightPath[i * 3], straightPath[i * 3 + 1] + 0.25,
-                    straightPath[i * 3 + 2]);
-                lstPoints.push_back(cpos);
-            }
-        }
-    }
-    return lstPoints;
 }

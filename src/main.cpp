@@ -99,23 +99,49 @@ int main() {
     CAMERA SETUP
     ================================ */
 
-    // Add camera - positioned closer to see the mesh better
+    // Orthographic Camera
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(8, 10, 6),
-        vector3df(0, 0, 0)
+        vector3df(0, 8, 0),   // Position
+        vector3df(0, 0, 0),   // Look-at target
+        -1,                   // ID
+        true                  // Use orthographic camera
     );
 
-    // Set the aspect ratio for the perspective camera
-    camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
+    // Calculate aspect ratio to fix stretching
+    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
 
-    scene::ILightSceneNode* light = smgr->addLightSceneNode(
-        0,
-        core::vector3df(-10, 30, -15), // Position the light up and to the side
-        video::SColorf(1.0f, 1.0f, 1.0f), // White light
-        12.0f // Radius
+    // Define the *vertical* size of the view.
+    // The horizontal size will be calculated from this.
+    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
+    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
+
+    core::matrix4 orthoMatrix;
+    orthoMatrix.buildProjectionMatrixOrthoLH(
+        orthoViewWidth,         // Calculated Width
+        orthoViewHeight,        // Fixed Height
+        camera->getNearValue(), // Near clip plane
+        camera->getFarValue()   // Far clip plane
     );
-    light->enableCastShadow(true); // Tell the light to cast shadows
+    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
+
+    //// Add camera - positioned closer to see the mesh better
+    //ICameraSceneNode* camera = smgr->addCameraSceneNode(
+    //    0,
+    //    vector3df(8, 8, 8),
+    //    vector3df(0, 0, 0)
+    //);
+
+    //// Set the aspect ratio for the perspective camera
+    //camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
+
+    //scene::ILightSceneNode* light = smgr->addLightSceneNode(
+    //    0,
+    //    core::vector3df(-10, 30, -15), // Position the light up and to the side
+    //    video::SColorf(1.0f, 1.0f, 1.0f), // White light
+    //    12.0f // Radius
+    //);
+    //light->enableCastShadow(true); // Tell the light to cast shadows
 
     /* ===============================
     LEVEL MESH SETUP (Moved from Pathfinding)
@@ -141,9 +167,9 @@ int main() {
 
     scene::IMeshSceneNode* levelNode = smgr->addMeshSceneNode(levelMesh);
     if (levelNode) {
-        levelNode->setMaterialFlag(EMF_LIGHTING, true);
+        levelNode->setMaterialFlag(EMF_LIGHTING, false);
         // Set its position slightly lower, as requested
-        levelNode->setPosition(core::vector3df(0, -0.65f, 0));
+        levelNode->setPosition(core::vector3df(0, 0, 0));
         levelNode->setID(IDFlag_IsPickable);
         levelNode->setVisible(true);
 
@@ -168,18 +194,25 @@ int main() {
     ================================ */
 
     // Initialize pathfinding system
-    NavMesh* navmesh = new NavMesh();
+    NavMesh* navmesh = new NavMesh(smgr->getRootSceneNode(), smgr, -1);
 
-    std::cout << "Building navigation mesh from levelNode..." << std::endl; // CHANGED
+    NavMeshParams params;
 
-    // CHANGED: Pass the existing 'levelNode' instead of the filename
-    if (!navmesh->load(levelNode, smgr)) {
+    // ...
+
+    if (!navmesh->build(levelNode, params)) {
         std::cerr << "Failed to build navigation mesh!" << std::endl;
         device->drop();
-        delete navmesh;
+        // Change this:
+        // delete navmesh; 
+        // To this:
+        navmesh->drop(); // <-- USE DROP()
         return 1;
     }
-    std::cout << "Navigation mesh built successfully!" << std::endl; // CHANGED
+
+    // 3. (Optional) Now that it's built, create the debug mesh
+    //    It no longer needs smgr
+    navmesh->createDebugMeshNode();
 
     /* ===============================
     SPHERE SETUP
@@ -187,6 +220,10 @@ int main() {
 
     // Create the sphere that will follow the path
     IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.5f, 16);
+    int sphereAgentId = -1;
+    int enemy1AgentId = -1;
+    int enemy2AgentId = -1;
+
     if (sphere) {
         sphere->setPosition(vector3df(0, 1, 0));
         sphere->setMaterialFlag(EMF_LIGHTING, true); // 1. Enable lighting
@@ -200,17 +237,47 @@ int main() {
 
         // 3. Tell the sphere to cast shadows
         sphere->addShadowVolumeSceneNode();
+        sphereAgentId = navmesh->addAgent(sphere, params.AgentRadius, params.AgentHeight);
+        if (sphereAgentId == -1)
+        {
+            std::cerr << "Failed to add sphere to crowd!" << std::endl;
+        }
     }
 
-    std::cout << "Sphere at position: " << sphere->getPosition().X << ", "
-              << sphere->getPosition().Y << ", "
-		<< sphere->getPosition().Z << std::endl;
+    /* ===============================
+    ENEMY SETUP
+    ================================ */
 
-    // Variables for movement
-    std::vector<vector3df> currentPath;
-    size_t currentPathIndex = 0;
-    float moveSpeed = 9.0f; // units per second (adjust for desired speed)
-    bool isMoving = false;
+        // Create the first enemy (red cube)
+    IMeshSceneNode* enemy1 = smgr->addCubeSceneNode(1.0f); // 1.0f size = 0.5f radius
+    if (enemy1) {
+        enemy1->setPosition(vector3df(5, 1, 5)); // Place it somewhere on the map
+        enemy1->setMaterialFlag(EMF_LIGHTING, false);
+        enemy1->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+
+        // Add enemy to the crowd
+        // Note: We use the same agent params as the player for this demo
+        enemy1AgentId = navmesh->addAgent(enemy1, params.AgentRadius, params.AgentHeight);
+        if (enemy1AgentId == -1)
+        {
+            std::cerr << "Failed to add enemy 1 to crowd!" << std::endl;
+        }
+    }
+
+    // Create the second enemy (red cube)
+    IMeshSceneNode* enemy2 = smgr->addCubeSceneNode(1.0f);
+    if (enemy2) {
+        enemy2->setPosition(vector3df(2, 1, 2)); // Place it somewhere else
+        enemy2->setMaterialFlag(EMF_LIGHTING, false);
+        enemy2->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+
+        // Add enemy to the crowd
+        enemy2AgentId = navmesh->addAgent(enemy2, params.AgentRadius, params.AgentHeight);
+        if (enemy2AgentId == -1)
+        {
+            std::cerr << "Failed to add enemy 2 to crowd!" << std::endl;
+        }
+    }
 
     /* ===============================
     GUI SETUP
@@ -238,37 +305,7 @@ int main() {
             f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
             lastTime = currentTime;
 
-            // Movement logic - add this after deltaTime calculation
-            if (isMoving && currentPathIndex < currentPath.size()) {
-                vector3df currentPos = sphere->getPosition();
-                vector3df targetPos = currentPath[currentPathIndex] + vector3df(0, 0.5f, 0);
-
-                // Calculate direction and distance
-                vector3df direction = targetPos - currentPos;
-                float distance = direction.getLength();
-
-                if (distance < 0.1f) {
-                    // Reached waypoint, move to next
-                    currentPathIndex++;
-                    if (currentPathIndex >= currentPath.size()) {
-                        isMoving = false;
-                        std::cout << "Reached destination!" << std::endl;
-                    }
-                }
-                else {
-                    // Move towards waypoint
-                    direction.normalize();
-                    vector3df movement = direction * moveSpeed * deltaTime;
-
-                    // Don't overshoot the waypoint
-                    if (movement.getLength() > distance) {
-                        sphere->setPosition(targetPos);
-                    }
-                    else {
-                        sphere->setPosition(currentPos + movement);
-                    }
-                }
-            }
+            navmesh->update(deltaTime);
 
 			// Mouse click handling for pathfinding
             if (inputEventReceiver.wasMouseClicked()) {
@@ -308,22 +345,29 @@ int main() {
                         //sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
 
                         // Get the sphere's current position *before* moving it
-                        core::vector3df startPos = sphere->getPosition();
+                        //core::vector3df startPos = sphere->getPosition();
 
-                        // Calculate the path and store it in the member variable 'currentPath'
-                        currentPath = navmesh->getPath(startPos, intersectionPoint);
+                        //// Calculate the path and store it in the member variable 'currentPath'
+                        //currentPath = navmesh->findPath(startPos, intersectionPoint);
 
-                        if (!currentPath.empty()) {
-                            currentPathIndex = 0;
-                            isMoving = true;
+                        //if (!currentPath.empty()) {
+                        //    currentPathIndex = 0;
+                        //    isMoving = true;
 
-                            std::cout << "Path calculated with " << currentPath.size()
-                                << " waypoints. Starting movement..." << std::endl;
-                            std::cout << "Destination: "
-                                << currentPath.back().X << ", "
-                                << currentPath.back().Y << ", "
-                                << currentPath.back().Z << std::endl;
+                        //    std::cout << "Path calculated with " << currentPath.size()
+                        //        << " waypoints. Starting movement..." << std::endl;
+                        //    std::cout << "Destination: "
+                        //        << currentPath.back().X << ", "
+                        //        << currentPath.back().Y << ", "
+                        //        << currentPath.back().Z << std::endl;
+                        //}
+
+                        if (sphereAgentId != -1) {
+                            navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
                         }
+
+						navmesh->setAgentTarget(enemy1AgentId, sphere->getPosition());
+						navmesh->setAgentTarget(enemy2AgentId, sphere->getPosition());
                     }
                 } 
                 else {
@@ -335,13 +379,11 @@ int main() {
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
 
+            // Draw debug path (after drawAll so it renders on top)
+            navmesh->renderCrowdDebug(driver);
+
             smgr->drawAll();
             guienv->drawAll();
-
-            // Draw debug path (after drawAll so it renders on top)
-            if (currentPath.size() > 0) {
-                navmesh->renderDebugPath(currentPath, driver);
-            }
 
             driver->endScene();
         }
@@ -353,7 +395,7 @@ int main() {
     /* ===============================
     CLEANUP
     ================================ */
-    delete navmesh;
+    navmesh->drop();
     device->drop();
 
     std::cout << "Game exited successfully." << std::endl;
