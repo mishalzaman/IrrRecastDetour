@@ -315,19 +315,50 @@ bool NavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
             return false;
         }
 
+        if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not build Detour navmesh.");
+            return false;
+        }
+
+        _navMesh.reset(dtAllocNavMesh());
+        if (!_navMesh)
+        {
+            dtFree(navData);
+            _ctx->log(RC_LOG_ERROR, "Could not create Detour navmesh");
+            return false;
+        }
+
         dtStatus status = _navMesh->init(navData, navDataSize, DT_TILE_FREE_DATA);
         if (dtStatusFailed(status))
         {
-            dtFree(navData); // navData is consumed by init, but on failure we must free it
+            dtFree(navData);
             _ctx->log(RC_LOG_ERROR, "Could not init Detour navmesh");
             return false;
         }
 
+        // --- (NAVQUERY IS STILL NEEDED) ---
         _navQuery.reset(dtAllocNavMeshQuery());
         status = _navQuery->init(_navMesh.get(), 2048);
         if (dtStatusFailed(status))
         {
             _ctx->log(RC_LOG_ERROR, "Could not init Detour navmesh query");
+            return false;
+        }
+
+        // --- (NEW) INITIALIZE CROWD ---
+        _crowd.reset(dtAllocCrowd());
+        if (!_crowd)
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not alloc crowd");
+            return false;
+        }
+
+        // Init the crowd with max agents, agent radius, and the navmesh
+        // Note: The agent radius here is a 'max' radius. We'll set specifics in addAgent.
+        if (!_crowd->init(MAX_AGENTS, _params.AgentRadius, _navMesh.get()))
+        {
+            _ctx->log(RC_LOG_ERROR, "Could not init crowd");
             return false;
         }
     }
@@ -461,6 +492,130 @@ ISceneNode* NavMesh::createDebugMeshNode()
 
     smesh->drop();
     return _naviDebugData;
+}
+
+int NavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float height)
+{
+    if (!_crowd || !node)
+        return -1;
+
+    dtCrowdAgentParams ap;
+    memset(&ap, 0, sizeof(ap));
+    ap.radius = radius;
+    ap.height = height;
+    ap.maxAcceleration = 20.0f;
+    ap.maxSpeed = 3.5f; // You can make this a parameter
+    ap.collisionQueryRange = ap.radius * 12.0f;
+    ap.pathOptimizationRange = ap.radius * 30.0f;
+    ap.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE;
+
+    vector3df pos = node->getPosition();
+    float irrPos[3] = { pos.X, pos.Y - 0.5f, pos.Z }; // Assume position is center, adjust to feet
+
+    int id = _crowd->addAgent(irrPos, &ap);
+    if (id != -1)
+    {
+        _agentNodeMap[id] = node;
+    }
+    return id;
+}
+
+void NavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
+{
+    if (!_crowd || !_navQuery || agentId == -1)
+        return;
+
+    // Find the nearest polygon to the target position
+    float pos[3] = { targetPos.X, targetPos.Y, targetPos.Z };
+    float ext[3] = { 2.0f, 4.0f, 2.0f }; // Search extent
+    dtPolyRef targetRef;
+    float nearestPt[3];
+    dtQueryFilter filter;
+
+    _navQuery->findNearestPoly(pos, ext, &filter, &targetRef, nearestPt);
+
+    if (targetRef)
+    {
+        // Request the agent to move to the new target
+        _crowd->requestMoveTarget(agentId, targetRef, nearestPt);
+    }
+    else
+    {
+        printf("WARNING: NavMesh::setAgentTarget: Could not find poly for target.\n");
+    }
+}
+
+void NavMesh::update(float deltaTime)
+{
+    if (!_crowd)
+        return;
+
+    // Update the crowd simulation
+    _crowd->update(deltaTime, nullptr);
+
+    // Update all Irrlicht nodes based on their agent's new position
+    for (auto const& [id, node] : _agentNodeMap)
+    {
+        const dtCrowdAgent* agent = _crowd->getAgent(id);
+        if (!agent || !agent->active)
+            continue;
+
+        // Get agent's position (at their feet)
+        const float* pos = agent->npos;
+
+        // Update the scene node's position
+        // We add the agent's radius to the Y pos to place the sphere's *center*
+        // This assumes the sphere's origin is its center.
+        node->setPosition(vector3df(pos[0], pos[1] + agent->params.radius, pos[2]));
+    }
+}
+
+void NavMesh::renderCrowdDebug(irr::video::IVideoDriver* driver)
+{
+    if (!_crowd || !driver)
+        return;
+
+    // Setup material for drawing lines
+    irr::video::SMaterial m;
+    m.Lighting = false;
+    driver->setMaterial(m);
+    driver->setTransform(irr::video::ETS_WORLD, matrix4());
+
+    // Iterate over all active agents
+    for (int i = 0; i < _crowd->getAgentCount(); ++i)
+    {
+        const dtCrowdAgent* agent = _crowd->getAgent(i);
+        if (!agent || !agent->active)
+            continue;
+
+        // --- THE FIX ---
+
+        // Check the number of corners
+        if (agent->ncorners < 2) // Need at least 2 points to draw a line
+            continue;
+
+        // Get the path corners from agent->cornerVerts
+        const float* pathPoints = agent->cornerVerts;
+
+        // Draw lines between the waypoints
+        for (int j = 0; j < agent->ncorners - 1; ++j)
+        {
+            // Points are (x, y, z)
+            vector3df start(
+                pathPoints[j * 3],
+                pathPoints[j * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
+                pathPoints[j * 3 + 2]
+            );
+            vector3df end(
+                pathPoints[(j + 1) * 3],
+                pathPoints[(j + 1) * 3 + 1] + 0.5f, // <-- INCREASED OFFSET
+                pathPoints[(j + 1) * 3 + 2]
+            );
+
+            // Draw a yellow line for the path
+            driver->draw3DLine(start, end, irr::video::SColor(255, 255, 0, 0));
+        }
+    }
 }
 
 

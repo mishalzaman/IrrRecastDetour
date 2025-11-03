@@ -220,6 +220,10 @@ int main() {
 
     // Create the sphere that will follow the path
     IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.5f, 16);
+    int sphereAgentId = -1;
+    int enemy1AgentId = -1;
+    int enemy2AgentId = -1;
+
     if (sphere) {
         sphere->setPosition(vector3df(0, 1, 0));
         sphere->setMaterialFlag(EMF_LIGHTING, true); // 1. Enable lighting
@@ -233,17 +237,47 @@ int main() {
 
         // 3. Tell the sphere to cast shadows
         sphere->addShadowVolumeSceneNode();
+        sphereAgentId = navmesh->addAgent(sphere, params.AgentRadius, params.AgentHeight);
+        if (sphereAgentId == -1)
+        {
+            std::cerr << "Failed to add sphere to crowd!" << std::endl;
+        }
     }
 
-    std::cout << "Sphere at position: " << sphere->getPosition().X << ", "
-              << sphere->getPosition().Y << ", "
-		<< sphere->getPosition().Z << std::endl;
+    /* ===============================
+    ENEMY SETUP
+    ================================ */
 
-    // Variables for movement
-    std::vector<vector3df> currentPath;
-    size_t currentPathIndex = 0;
-    float moveSpeed = 9.0f; // units per second (adjust for desired speed)
-    bool isMoving = false;
+        // Create the first enemy (red cube)
+    IMeshSceneNode* enemy1 = smgr->addCubeSceneNode(1.0f); // 1.0f size = 0.5f radius
+    if (enemy1) {
+        enemy1->setPosition(vector3df(5, 1, 5)); // Place it somewhere on the map
+        enemy1->setMaterialFlag(EMF_LIGHTING, false);
+        enemy1->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+
+        // Add enemy to the crowd
+        // Note: We use the same agent params as the player for this demo
+        enemy1AgentId = navmesh->addAgent(enemy1, params.AgentRadius, params.AgentHeight);
+        if (enemy1AgentId == -1)
+        {
+            std::cerr << "Failed to add enemy 1 to crowd!" << std::endl;
+        }
+    }
+
+    // Create the second enemy (red cube)
+    IMeshSceneNode* enemy2 = smgr->addCubeSceneNode(1.0f);
+    if (enemy2) {
+        enemy2->setPosition(vector3df(2, 1, 2)); // Place it somewhere else
+        enemy2->setMaterialFlag(EMF_LIGHTING, false);
+        enemy2->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+
+        // Add enemy to the crowd
+        enemy2AgentId = navmesh->addAgent(enemy2, params.AgentRadius, params.AgentHeight);
+        if (enemy2AgentId == -1)
+        {
+            std::cerr << "Failed to add enemy 2 to crowd!" << std::endl;
+        }
+    }
 
     /* ===============================
     GUI SETUP
@@ -271,37 +305,7 @@ int main() {
             f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
             lastTime = currentTime;
 
-            // Movement logic - add this after deltaTime calculation
-            if (isMoving && currentPathIndex < currentPath.size()) {
-                vector3df currentPos = sphere->getPosition();
-                vector3df targetPos = currentPath[currentPathIndex] + vector3df(0, 0.5f, 0);
-
-                // Calculate direction and distance
-                vector3df direction = targetPos - currentPos;
-                float distance = direction.getLength();
-
-                if (distance < 0.1f) {
-                    // Reached waypoint, move to next
-                    currentPathIndex++;
-                    if (currentPathIndex >= currentPath.size()) {
-                        isMoving = false;
-                        std::cout << "Reached destination!" << std::endl;
-                    }
-                }
-                else {
-                    // Move towards waypoint
-                    direction.normalize();
-                    vector3df movement = direction * moveSpeed * deltaTime;
-
-                    // Don't overshoot the waypoint
-                    if (movement.getLength() > distance) {
-                        sphere->setPosition(targetPos);
-                    }
-                    else {
-                        sphere->setPosition(currentPos + movement);
-                    }
-                }
-            }
+            navmesh->update(deltaTime);
 
 			// Mouse click handling for pathfinding
             if (inputEventReceiver.wasMouseClicked()) {
@@ -341,22 +345,29 @@ int main() {
                         //sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
 
                         // Get the sphere's current position *before* moving it
-                        core::vector3df startPos = sphere->getPosition();
+                        //core::vector3df startPos = sphere->getPosition();
 
-                        // Calculate the path and store it in the member variable 'currentPath'
-                        currentPath = navmesh->findPath(startPos, intersectionPoint);
+                        //// Calculate the path and store it in the member variable 'currentPath'
+                        //currentPath = navmesh->findPath(startPos, intersectionPoint);
 
-                        if (!currentPath.empty()) {
-                            currentPathIndex = 0;
-                            isMoving = true;
+                        //if (!currentPath.empty()) {
+                        //    currentPathIndex = 0;
+                        //    isMoving = true;
 
-                            std::cout << "Path calculated with " << currentPath.size()
-                                << " waypoints. Starting movement..." << std::endl;
-                            std::cout << "Destination: "
-                                << currentPath.back().X << ", "
-                                << currentPath.back().Y << ", "
-                                << currentPath.back().Z << std::endl;
+                        //    std::cout << "Path calculated with " << currentPath.size()
+                        //        << " waypoints. Starting movement..." << std::endl;
+                        //    std::cout << "Destination: "
+                        //        << currentPath.back().X << ", "
+                        //        << currentPath.back().Y << ", "
+                        //        << currentPath.back().Z << std::endl;
+                        //}
+
+                        if (sphereAgentId != -1) {
+                            navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
                         }
+
+						navmesh->setAgentTarget(enemy1AgentId, sphere->getPosition());
+						navmesh->setAgentTarget(enemy2AgentId, sphere->getPosition());
                     }
                 } 
                 else {
@@ -368,13 +379,11 @@ int main() {
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
 
+            // Draw debug path (after drawAll so it renders on top)
+            navmesh->renderCrowdDebug(driver);
+
             smgr->drawAll();
             guienv->drawAll();
-
-            // Draw debug path (after drawAll so it renders on top)
-            if (currentPath.size() > 0) {
-                navmesh->renderDebugPath(currentPath, driver);
-            }
 
             driver->endScene();
         }

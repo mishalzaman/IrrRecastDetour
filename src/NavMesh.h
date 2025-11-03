@@ -5,7 +5,8 @@
 #include <stdio.h>
 #include <cstddef>
 #include <math.h>
-#include <memory> // For std::unique_ptr
+#include <memory>
+#include <map>
 
 #include <irrlicht.h>
 #include <ISceneNode.h>
@@ -13,6 +14,8 @@
 #include "DetourNavMeshQuery.h"
 #include "DetourNavMesh.h"
 #include "DetourNavMeshBuilder.h"
+#include "DetourCrowd.h"
+
 
 // Define custom deleters for Recast/Detour types
 struct RecastContextDeleter {
@@ -38,6 +41,10 @@ struct DetourNavMeshDeleter {
 };
 struct DetourNavMeshQueryDeleter {
     void operator()(dtNavMeshQuery* navQuery) const { dtFreeNavMeshQuery(navQuery); }
+};
+
+struct DetourCrowdDeleter {
+    void operator()(dtCrowd* crowd) const { dtFreeCrowd(crowd); }
 };
 
 /// These are just sample areas to use consistent values across the samples.
@@ -142,6 +149,34 @@ public:
      */
     float getTotalBuildTimeMs() const { return _totalBuildTimeMs; }
 
+    /**
+         * @brief Adds a new agent to the crowd simulation.
+         * @param node The Irrlicht scene node this agent will control.
+         * @param radius The agent's radius.
+         * @param height The agent's height.
+         * @return The agent's ID, or -1 on failure.
+         */
+    int addAgent(irr::scene::ISceneNode* node, float radius, float height);
+
+    /**
+     * @brief Sets a new movement target for an agent.
+     * @param agentId The ID returned by addAgent.
+     * @param targetPos The world-space destination.
+     */
+    void setAgentTarget(int agentId, irr::core::vector3df targetPos);
+
+    /**
+     * @brief Updates the crowd simulation. Call this ONCE per frame.
+     * @param deltaTime Time elapsed since the last frame, in seconds.
+     */
+    void update(float deltaTime);
+
+    /**
+    * @brief Renders debug lines for all agent paths in the crowd.
+    * @param driver The Irrlicht video driver.
+    */
+    void renderCrowdDebug(irr::video::IVideoDriver* driver);
+
 private:
     // Recast/Detour core objects (RAII-managed)
     std::unique_ptr<rcContext, RecastContextDeleter> _ctx;
@@ -168,6 +203,15 @@ private:
     irr::scene::ISceneNode* _naviDebugData = nullptr;
 
     irr::core::aabbox3d<irr::f32> _box;
+
+    // --- NEW CROWD OBJECT ---
+    std::unique_ptr<dtCrowd, DetourCrowdDeleter> _crowd;
+
+    // --- NEW AGENT MAP ---
+    // Links dtCrowd agent IDs to Irrlicht scene nodes
+    std::map<int, irr::scene::ISceneNode*> _agentNodeMap;
+
+	const int MAX_AGENTS = 128;
 
     bool _getMeshBufferData
     (
