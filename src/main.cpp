@@ -219,7 +219,7 @@ int main() {
     ================================ */
 
     // Create the sphere that will follow the path
-    IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.5f, 16);
+    IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.2f, 16);
     int sphereAgentId = -1;
     int enemy1AgentId = -1;
     int enemy2AgentId = -1;
@@ -249,7 +249,7 @@ int main() {
     ================================ */
 
         // Create the first enemy (red cube)
-    IMeshSceneNode* enemy1 = smgr->addCubeSceneNode(1.0f); // 1.0f size = 0.5f radius
+    IMeshSceneNode* enemy1 = smgr->addSphereSceneNode(0.2f, 16); // 1.0f size = 0.5f radius
     if (enemy1) {
         enemy1->setPosition(vector3df(5, 1, 5)); // Place it somewhere on the map
         enemy1->setMaterialFlag(EMF_LIGHTING, false);
@@ -265,7 +265,7 @@ int main() {
     }
 
     // Create the second enemy (red cube)
-    IMeshSceneNode* enemy2 = smgr->addCubeSceneNode(1.0f);
+    IMeshSceneNode* enemy2 = smgr->addSphereSceneNode(0.2f, 16);
     if (enemy2) {
         enemy2->setPosition(vector3df(2, 1, 2)); // Place it somewhere else
         enemy2->setMaterialFlag(EMF_LIGHTING, false);
@@ -305,8 +305,6 @@ int main() {
             f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
             lastTime = currentTime;
 
-            navmesh->update(deltaTime);
-
 			// Mouse click handling for pathfinding
             if (inputEventReceiver.wasMouseClicked()) {
                 position2di mousePos = inputEventReceiver.getMousePos();
@@ -341,33 +339,9 @@ int main() {
                             << intersectionPoint.Y << ", "
                             << intersectionPoint.Z << std::endl;
 
-                        // Move the sphere to the intersection point
-                        //sphere->setPosition(intersectionPoint + core::vector3df(0, 0.5f, 0));
-
-                        // Get the sphere's current position *before* moving it
-                        //core::vector3df startPos = sphere->getPosition();
-
-                        //// Calculate the path and store it in the member variable 'currentPath'
-                        //currentPath = navmesh->findPath(startPos, intersectionPoint);
-
-                        //if (!currentPath.empty()) {
-                        //    currentPathIndex = 0;
-                        //    isMoving = true;
-
-                        //    std::cout << "Path calculated with " << currentPath.size()
-                        //        << " waypoints. Starting movement..." << std::endl;
-                        //    std::cout << "Destination: "
-                        //        << currentPath.back().X << ", "
-                        //        << currentPath.back().Y << ", "
-                        //        << currentPath.back().Z << std::endl;
-                        //}
-
                         if (sphereAgentId != -1) {
                             navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
                         }
-
-						navmesh->setAgentTarget(enemy1AgentId, sphere->getPosition());
-						navmesh->setAgentTarget(enemy2AgentId, sphere->getPosition());
                     }
                 } 
                 else {
@@ -376,14 +350,19 @@ int main() {
                 }
             }
 
+            navmesh->setAgentTarget(enemy1AgentId, sphere->getPosition());
+            navmesh->setAgentTarget(enemy2AgentId, sphere->getPosition());
+
+            navmesh->update(deltaTime);
+
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
 
-            // Draw debug path (after drawAll so it renders on top)
-            navmesh->renderCrowdDebug(driver);
-
             smgr->drawAll();
             guienv->drawAll();
+
+            // Draw debug path (after drawAll so it renders on top)
+            navmesh->renderCrowdDebug(driver);
 
             driver->endScene();
         }
