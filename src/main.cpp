@@ -1,8 +1,7 @@
 /*
 Game Engine Main Loop
-- Manages multiple pages/screens
-- Handles render target texture (RTT) for pixel-perfect rendering
-- Uses PageManager to switch between different game states
+- Group formation movement (Pikmin/Wonderful 101 style)
+- Enemies follow player without blocking
 */
 #ifdef _WIN32
 #include <windows.h>
@@ -10,6 +9,8 @@ Game Engine Main Loop
 #include <iostream>
 #include <irrlicht.h>
 #include <memory>
+#include <vector>
+#include <cmath>
 #include "Config.h"
 #include "NavMesh.h"
 
@@ -55,6 +56,18 @@ public:
     }
 };
 
+// Helper function to calculate formation offset
+vector3df calculateFormationOffset(int index, int totalCount, float radius) {
+    // Create a circular formation around the leader
+    const float PI = 3.14159265359f;
+    float angle = (2.0f * PI * index) / totalCount;
+    return vector3df(
+        cosf(angle) * radius,
+        0.0f,
+        sinf(angle) * radius
+    );
+}
+
 int main() {
     /* ===============================
     IRRLICHT SETUP
@@ -83,7 +96,7 @@ int main() {
         return 1;
     }
 
-    device->setWindowCaption(L"Game Engine - Pathfinding Demo");
+    device->setWindowCaption(L"Game Engine - Group Formation Movement");
 
     IVideoDriver* driver = device->getVideoDriver();
     ISceneManager* smgr = device->getSceneManager();
@@ -92,61 +105,35 @@ int main() {
     driver->setTextureCreationFlag(ETCF_CREATE_MIP_MAPS, false);
     driver->setTextureCreationFlag(ETCF_OPTIMIZED_FOR_QUALITY, false);
 
-    smgr->setShadowColor(video::SColor(150, 0, 0, 0)); // Semi-transparent black
-    driver->setTextureCreationFlag(ETCF_CREATE_MIP_MAPS, false);
+    smgr->setShadowColor(video::SColor(150, 0, 0, 0));
 
     /* ===============================
     CAMERA SETUP
     ================================ */
-
-    // Orthographic Camera
     ICameraSceneNode* camera = smgr->addCameraSceneNode(
         0,
-        vector3df(0, 8, 0),   // Position
-        vector3df(0, 0, 0),   // Look-at target
-        -1,                   // ID
-        true                  // Use orthographic camera
+        vector3df(0, 8, 0),
+        vector3df(0, 0, 0),
+        -1,
+        true
     );
 
-    // Calculate aspect ratio to fix stretching
     const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
-
-    // Define the *vertical* size of the view.
-    // The horizontal size will be calculated from this.
-    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
-    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
+    const f32 orthoViewHeight = 20.0f;
+    const f32 orthoViewWidth = orthoViewHeight * aspectRatio;
 
     core::matrix4 orthoMatrix;
     orthoMatrix.buildProjectionMatrixOrthoLH(
-        orthoViewWidth,         // Calculated Width
-        orthoViewHeight,        // Fixed Height
-        camera->getNearValue(), // Near clip plane
-        camera->getFarValue()   // Far clip plane
+        orthoViewWidth,
+        orthoViewHeight,
+        camera->getNearValue(),
+        camera->getFarValue()
     );
-    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
-
-    //// Add camera - positioned closer to see the mesh better
-    //ICameraSceneNode* camera = smgr->addCameraSceneNode(
-    //    0,
-    //    vector3df(8, 8, 8),
-    //    vector3df(0, 0, 0)
-    //);
-
-    //// Set the aspect ratio for the perspective camera
-    //camera->setAspectRatio((f32)windowWidth / (f32)windowHeight);
-
-    //scene::ILightSceneNode* light = smgr->addLightSceneNode(
-    //    0,
-    //    core::vector3df(-10, 30, -15), // Position the light up and to the side
-    //    video::SColorf(1.0f, 1.0f, 1.0f), // White light
-    //    12.0f // Radius
-    //);
-    //light->enableCastShadow(true); // Tell the light to cast shadows
+    camera->setProjectionMatrix(orthoMatrix, true);
 
     /* ===============================
-    LEVEL MESH SETUP (Moved from Pathfinding)
+    LEVEL MESH SETUP
     ================================ */
-
     enum
     {
         ID_IsNotPickable = 0,
@@ -154,144 +141,129 @@ int main() {
         IDFlag_IsHighlightable = 1 << 1
     };
 
-    // 1. Load the mesh data
     scene::IMesh* levelMesh = smgr->getMesh("assets/test_map_2.obj");
     if (!levelMesh) {
-        std::cerr << "Failed to load assets/test_map.obj!" << std::endl;
+        std::cerr << "Failed to load assets/test_map_2.obj!" << std::endl;
         device->drop();
         return 1;
     }
 
-    // 2. Create the visible scene node for the level
     scene::ISceneCollisionManager* collMan = nullptr;
-
     scene::IMeshSceneNode* levelNode = smgr->addMeshSceneNode(levelMesh);
     if (levelNode) {
         levelNode->setMaterialFlag(EMF_LIGHTING, false);
-        // Set its position slightly lower, as requested
         levelNode->setPosition(core::vector3df(0, 0, 0));
         levelNode->setID(IDFlag_IsPickable);
         levelNode->setVisible(true);
 
-        std::cout << "Creating triangle selector..." << std::endl; // Debug message
+        std::cout << "Creating triangle selector..." << std::endl;
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
             levelNode->getMesh(), levelNode, 128
         );
 
         if (selector) {
             levelNode->setTriangleSelector(selector);
-            selector->drop(); // The node now holds a reference, so we can drop ours
+            selector->drop();
             collMan = smgr->getSceneCollisionManager();
-            std::cout << "Triangle selector set successfully." << std::endl; // Debug message
+            std::cout << "Triangle selector set successfully." << std::endl;
         }
         else {
-            std::cerr << "Failed to create triangle selector!" << std::endl; // Debug message
+            std::cerr << "Failed to create triangle selector!" << std::endl;
         }
     }
 
     /* ===============================
     PATHFINDING SETUP
     ================================ */
-
-    // Initialize pathfinding system
     NavMesh* navmesh = new NavMesh(smgr->getRootSceneNode(), smgr, -1);
-
     NavMeshParams params;
-
-    // ...
 
     if (!navmesh->build(levelNode, params)) {
         std::cerr << "Failed to build navigation mesh!" << std::endl;
         device->drop();
-        // Change this:
-        // delete navmesh; 
-        // To this:
-        navmesh->drop(); // <-- USE DROP()
+        navmesh->drop();
         return 1;
     }
 
-    // 3. (Optional) Now that it's built, create the debug mesh
-    //    It no longer needs smgr
     navmesh->renderNavMesh();
 
     /* ===============================
-    SPHERE SETUP
+    PLAYER SPHERE SETUP
     ================================ */
-
-    // Create the sphere that will follow the path
     IMeshSceneNode* sphere = smgr->addSphereSceneNode(0.2f, 16);
     int sphereAgentId = -1;
-    int enemy1AgentId = -1;
-    int enemy2AgentId = -1;
 
     if (sphere) {
         sphere->setPosition(vector3df(0, 1, 0));
-        sphere->setMaterialFlag(EMF_LIGHTING, true); // 1. Enable lighting
+        sphere->setMaterialFlag(EMF_LIGHTING, false);
         sphere->setMaterialTexture(0, 0);
+        sphere->getMaterial(0).DiffuseColor = SColor(255, 100, 100, 255); // Blue for player
 
-        // 2. Adjust material to react to light
-        sphere->getMaterial(0).DiffuseColor = SColor(255, 200, 200, 200); // Bright diffuse to catch light
-        sphere->getMaterial(0).AmbientColor = SColor(255, 40, 40, 40);   // Dark ambient for shadowed areas
-        sphere->getMaterial(0).EmissiveColor = SColor(0, 0, 0, 0);      // No self-illumination
-        sphere->getMaterial(0).Shininess = 20.0f;                        // Add a small highlight
+        // Player agent with NO collision avoidance
+        dtCrowdAgentParams playerParams;
+        memset(&playerParams, 0, sizeof(playerParams));
+        playerParams.maxAcceleration = 20.0f;
+        playerParams.maxSpeed = 3.5f;
+        playerParams.collisionQueryRange = 0.0f; // Disable collision avoidance
+        playerParams.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO;
+        // Note: NO DT_CROWD_OBSTACLE_AVOIDANCE and NO DT_CROWD_SEPARATION
 
-        // 3. Tell the sphere to cast shadows
-        sphere->addShadowVolumeSceneNode();
-        sphereAgentId = navmesh->addAgent(sphere, params.AgentRadius, params.AgentHeight);
-        if (sphereAgentId == -1)
-        {
+        sphereAgentId = navmesh->addAgent(sphere, playerParams);
+        if (sphereAgentId == -1) {
             std::cerr << "Failed to add sphere to crowd!" << std::endl;
         }
     }
 
     /* ===============================
-    ENEMY SETUP
+    ENEMY SETUP (Formation Followers)
     ================================ */
+    const int NUM_ENEMIES = 8;
+    std::vector<IMeshSceneNode*> enemies;
+    std::vector<int> enemyAgentIds;
+    const float formationRadius = 2.0f; // Distance from player
 
-    dtCrowdAgentParams dtparams;
-    memset(&dtparams, 0, sizeof(dtparams)); // <-- ADD THIS LINE
-    dtparams.maxAcceleration = 20.0f;        // Now set your custom value
-	dtparams.maxSpeed = 1.0f;               // Now set your custom valueq
+    dtCrowdAgentParams followerParams;
+    memset(&followerParams, 0, sizeof(followerParams));
+    followerParams.maxAcceleration = 15.0f; // Slightly slower acceleration
+    followerParams.maxSpeed = 3.0f;         // Slightly slower than player
 
-        // Create the first enemy (red cube)
-    IMeshSceneNode* enemy1 = smgr->addSphereSceneNode(0.2f, 16); // 1.0f size = 0.5f radius
-    if (enemy1) {
-        enemy1->setPosition(vector3df(5, 1, 5)); // Place it somewhere on the map
-        enemy1->setMaterialFlag(EMF_LIGHTING, false);
-        enemy1->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+    // KEY SETTINGS: Enable separation between followers, but not with player
+    followerParams.separationWeight = 2.0f; // Push away from other followers
+    followerParams.collisionQueryRange = params.AgentRadius * 8.0f;
+    followerParams.pathOptimizationRange = params.AgentRadius * 20.0f;
 
-        // Add enemy to the crowd
-        // Note: We use the same agent params as the player for this demo
-        enemy1AgentId = navmesh->addAgent(enemy1, dtparams);
-        if (enemy1AgentId == -1)
-        {
-            std::cerr << "Failed to add enemy 1 to crowd!" << std::endl;
-        }
-    }
+    // Update flags WITHOUT obstacle avoidance for smoother following
+    followerParams.updateFlags = DT_CROWD_ANTICIPATE_TURNS |
+        DT_CROWD_OPTIMIZE_VIS |
+        DT_CROWD_OPTIMIZE_TOPO |
+        DT_CROWD_SEPARATION; // Enable separation between followers
 
-    // Create the second enemy (red cube)
-    IMeshSceneNode* enemy2 = smgr->addSphereSceneNode(0.2f, 16);
-    if (enemy2) {
-        enemy2->setPosition(vector3df(2, 1, 2)); // Place it somewhere else
-        enemy2->setMaterialFlag(EMF_LIGHTING, false);
-        enemy2->getMaterial(0).DiffuseColor = SColor(255, 200, 0, 0); // Red color
+    for (int i = 0; i < NUM_ENEMIES; i++) {
+        IMeshSceneNode* enemy = smgr->addSphereSceneNode(0.15f, 16);
+        if (enemy) {
+            // Position enemies in a circle around starting position
+            vector3df offset = calculateFormationOffset(i, NUM_ENEMIES, formationRadius);
+            enemy->setPosition(vector3df(0, 1, 0) + offset);
+            enemy->setMaterialFlag(EMF_LIGHTING, false);
 
-        // Add enemy to the crowd
-        enemy2AgentId = navmesh->addAgent(enemy2, dtparams);
-        if (enemy2AgentId == -1)
-        {
-            std::cerr << "Failed to add enemy 2 to crowd!" << std::endl;
+            // Color variation for enemies
+            u8 colorVar = (u8)(200 + (i * 5));
+            enemy->getMaterial(0).DiffuseColor = SColor(255, colorVar, 0, 0);
+
+            int agentId = navmesh->addAgent(enemy, followerParams);
+            if (agentId != -1) {
+                enemies.push_back(enemy);
+                enemyAgentIds.push_back(agentId);
+            }
         }
     }
 
     /* ===============================
     GUI SETUP
     ================================ */
-
-    // Add instructions text
     guienv->addStaticText(
-        L"Left-click on the mesh to move the sphere",
-        rect<s32>(10, 10, 400, 30),
+        L"Left-click to move player. Followers form a group around the player.",
+        rect<s32>(10, 10, 500, 30),
         false, true, 0, -1, true
     );
 
@@ -305,70 +277,50 @@ int main() {
     ================================ */
     while (device->run()) {
         if (device->isWindowActive()) {
-            // Calculate delta time
             u32 currentTime = device->getTimer()->getTime();
-            f32 deltaTime = (currentTime - lastTime) / 1000.0f; // Convert to seconds
+            f32 deltaTime = (currentTime - lastTime) / 1000.0f;
             lastTime = currentTime;
 
-			// Mouse click handling for pathfinding
+            // Mouse click handling for player movement
             if (inputEventReceiver.wasMouseClicked()) {
                 position2di mousePos = inputEventReceiver.getMousePos();
-
-                // 1. Get the ray from the camera
                 core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
-                    mousePos,
-                    camera
+                    mousePos, camera
                 );
 
-                // 2. Variables to store the collision result
                 core::vector3df intersectionPoint;
                 core::triangle3df hitTriangle;
-
-                // 3. Perform collision detection ONLY against pickable nodes
                 scene::ISceneNode* selectedSceneNode =
                     collMan->getSceneNodeAndCollisionPointFromRay(
-                        ray,
-                        intersectionPoint, // This will be the position of the collision
-                        hitTriangle, // This will be the triangle hit in the collision
-                        IDFlag_IsPickable, // This ensures that only nodes that we have
-                        // set up to be pickable are considered
-                        0); // Check the entire scene
+                        ray, intersectionPoint, hitTriangle, IDFlag_IsPickable, 0
+                    );
 
-                // 4. Check if we hit a pickable node
-                if (selectedSceneNode) {
-                    // 5. Check if the node we hit was the levelNode
-                    //    (This is technically optional if it's your only pickable node)
-                    if (selectedSceneNode == levelNode) {
-                        std::cout << "Mouse clicked mesh at: "
-                            << intersectionPoint.X << ", "
-                            << intersectionPoint.Y << ", "
-                            << intersectionPoint.Z << std::endl;
-
-                        if (sphereAgentId != -1) {
-                            navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
-                        }
-                    }
-                } 
-                else {
-                    // The ray didn't hit any node *flagged as pickable*
-                    std::cout << "Mouse ray missed all pickable nodes." << std::endl;
+                if (selectedSceneNode == levelNode && sphereAgentId != -1) {
+                    navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
                 }
             }
 
-            navmesh->setAgentTarget(enemy1AgentId, sphere->getPosition());
-            navmesh->setAgentTarget(enemy2AgentId, sphere->getPosition());
+            // Update follower targets to formation positions around the player
+            if (sphere && sphereAgentId != -1) {
+                vector3df playerPos = sphere->getPosition();
+
+                for (size_t i = 0; i < enemyAgentIds.size(); i++) {
+                    // Calculate formation position offset
+                    vector3df offset = calculateFormationOffset((int)i, NUM_ENEMIES, formationRadius);
+                    vector3df targetPos = playerPos + offset;
+
+                    // Set target with some damping to prevent jitter
+                    navmesh->setAgentTarget(enemyAgentIds[i], targetPos);
+                }
+            }
 
             navmesh->update(deltaTime);
 
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
-
             smgr->drawAll();
             guienv->drawAll();
-
-            // Draw debug path (after drawAll so it renders on top)
             navmesh->renderAgentPaths(driver);
-
             driver->endScene();
         }
         else {
