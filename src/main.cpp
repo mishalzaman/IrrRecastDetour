@@ -86,6 +86,41 @@ vector3df calculateFormationOffset(int index, int totalCount, float radius) {
     );
 }
 
+vector3df calculateTrailingFormationOffset(int index, int totalCount, float radius, const vector3df& forwardDir) {
+    const float PI = 3.14159265359f;
+
+    // Calculate the "back" direction vector and its angle
+    vector3df backDir = -forwardDir;
+    if (backDir.getLengthSQ() < 0.001f) {
+        backDir.set(0, 0, -1); // Default to -Z if no forward dir
+    }
+
+    // Get the angle of the "back" direction
+    float backAngle = atan2f(backDir.Z, backDir.X);
+
+    // Define the angular spread of the formation 
+    // We'll use a 270-degree arc (1.5 * PI radians)
+    const float totalAngleSpan = 1.5f * PI;
+
+    float followerAngle;
+    if (totalCount > 1) {
+        // Spread followers evenly across the arc
+        float anglePerFollower = totalAngleSpan / (totalCount - 1);
+        float startAngle = backAngle - (totalAngleSpan / 2.0f);
+        followerAngle = startAngle + (index * anglePerFollower);
+    }
+    else {
+        followerAngle = backAngle; // Only one follower, put it directly behind
+    }
+
+    // Calculate the offset based on this angle and radius
+    return vector3df(
+        cosf(followerAngle) * radius,
+        0.0f,
+        sinf(followerAngle) * radius
+    );
+}
+
 int main() {
     /* ===============================
     IRRLICHT SETUP
@@ -235,7 +270,7 @@ int main() {
     /* ===============================
     ENEMY SETUP (Formation Followers)
     ================================ */
-    const int NUM_ENEMIES = 8;
+    const int NUM_ENEMIES = 4;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     const float formationRadius = 1.0f; // Distance from player
@@ -290,6 +325,8 @@ int main() {
     ================================ */
     u32 lastTime = device->getTimer()->getTime();
 
+    vector3df playerForwardDir(0, 0, 1);
+
     /* ===============================
     MAIN GAME LOOP
     ================================ */
@@ -321,10 +358,9 @@ int main() {
                 if (moveDir.getLengthSQ() > 0.001f) {
                     moveDir.normalize();
 
-                    // Set a target 1.0 unit away in the direction of movement.
-                    // This is updated every frame, simulating continuous velocity.
-                    // The agent will move at its maxSpeed towards this point,
-                    // constrained by the navmesh.
+                    // *** ADD THIS: Store the last movement direction ***
+                    playerForwardDir = moveDir;
+
                     vector3df targetPos = playerPos + moveDir * 1.0f;
                     navmesh->setAgentTarget(sphereAgentId, targetPos);
                 }
@@ -363,11 +399,19 @@ int main() {
                 vector3df playerPos = sphere->getPosition();
 
                 for (size_t i = 0; i < enemyAgentIds.size(); i++) {
-                    // Calculate formation position offset
-                    vector3df offset = calculateFormationOffset((int)i, NUM_ENEMIES, formationRadius);
+
+                    // *** USE THE NEW FUNCTION ***
+                    // Calculate formation position offset relative to player's forward direction
+                    vector3df offset = calculateTrailingFormationOffset(
+                        (int)i,
+                        NUM_ENEMIES,
+                        formationRadius,
+                        playerForwardDir // Pass in the player's stored direction
+                    );
+
                     vector3df targetPos = playerPos + offset;
 
-                    // Set target with some damping to prevent jitter
+                    // Set target
                     navmesh->setAgentTarget(enemyAgentIds[i], targetPos);
                 }
             }
@@ -378,7 +422,7 @@ int main() {
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
             smgr->drawAll();
             guienv->drawAll();
-            //navmesh->renderAgentPaths(driver);
+            navmesh->renderAgentPaths(driver);
             driver->endScene();
         }
         else {
