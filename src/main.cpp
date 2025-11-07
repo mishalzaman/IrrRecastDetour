@@ -2,6 +2,7 @@
 Game Engine Main Loop
 - Group formation movement (Pikmin/Wonderful 101 style)
 - Enemies follow player without blocking
+- WASD player movement constrained by navmesh
 */
 #ifdef _WIN32
 #include <windows.h>
@@ -30,18 +31,30 @@ class PathfindingInputReceiver : public IEventReceiver {
 public:
     bool mouseClicked;
     position2di mousePos;
+    bool KeyIsDown[KEY_KEY_CODES_COUNT]; // Array to hold key states
 
-    PathfindingInputReceiver() : mouseClicked(false) {}
+    PathfindingInputReceiver() : mouseClicked(false) {
+        // Initialize all key states to false
+        for (u32 i = 0; i < KEY_KEY_CODES_COUNT; ++i)
+            KeyIsDown[i] = false;
+    }
 
     virtual bool OnEvent(const SEvent& event) {
         if (event.EventType == EET_MOUSE_INPUT_EVENT) {
             if (event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN) {
                 mouseClicked = true;
                 mousePos = position2di(event.MouseInput.X, event.MouseInput.Y);
-                std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
+                // std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
                 return true;
             }
         }
+
+        // Add key event handling
+        if (event.EventType == EET_KEY_INPUT_EVENT) {
+            KeyIsDown[event.KeyInput.Key] = event.KeyInput.PressedDown;
+            return true;
+        }
+
         return false;
     }
 
@@ -53,6 +66,11 @@ public:
 
     position2di getMousePos() const {
         return mousePos;
+    }
+
+    // Public getter for key states
+    virtual bool IsKeyDown(EKEY_CODE keyCode) const {
+        return KeyIsDown[keyCode];
     }
 };
 
@@ -220,7 +238,7 @@ int main() {
     const int NUM_ENEMIES = 8;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
-    const float formationRadius = 2.0f; // Distance from player
+    const float formationRadius = 1.0f; // Distance from player
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
@@ -262,7 +280,7 @@ int main() {
     GUI SETUP
     ================================ */
     guienv->addStaticText(
-        L"Left-click to move player. Followers form a group around the player.",
+        L"WASD to move player. Followers form a group around the player.",
         rect<s32>(10, 10, 500, 30),
         false, true, 0, -1, true
     );
@@ -281,7 +299,46 @@ int main() {
             f32 deltaTime = (currentTime - lastTime) / 1000.0f;
             lastTime = currentTime;
 
-            // Mouse click handling for player movement
+            // =================================================================
+            // NEW: Player WASD Movement Logic
+            // =================================================================
+            if (sphereAgentId != -1) {
+                vector3df moveDir(0, 0, 0);
+
+                // Check key states
+                if (inputEventReceiver.IsKeyDown(KEY_KEY_W))
+                    moveDir.X += 1.0f; // 'W' moves forward (positive Z)
+                if (inputEventReceiver.IsKeyDown(KEY_KEY_S))
+                    moveDir.X -= 1.0f; // 'S' moves backward (negative Z)
+                if (inputEventReceiver.IsKeyDown(KEY_KEY_A))
+                    moveDir.Z += 1.0f; // 'A' moves left (negative X)
+                if (inputEventReceiver.IsKeyDown(KEY_KEY_D))
+                    moveDir.Z -= 1.0f; // 'D' moves right (positive X)
+
+                vector3df playerPos = sphere->getPosition();
+
+                // Check if any movement key is pressed
+                if (moveDir.getLengthSQ() > 0.001f) {
+                    moveDir.normalize();
+
+                    // Set a target 1.0 unit away in the direction of movement.
+                    // This is updated every frame, simulating continuous velocity.
+                    // The agent will move at its maxSpeed towards this point,
+                    // constrained by the navmesh.
+                    vector3df targetPos = playerPos + moveDir * 1.0f;
+                    navmesh->setAgentTarget(sphereAgentId, targetPos);
+                }
+                else {
+                    // No keys pressed: tell the agent to stop by
+                    // setting its target to its current position.
+                    navmesh->setAgentTarget(sphereAgentId, playerPos);
+                }
+            }
+
+            // =================================================================
+            // OLD: Mouse click handling (REMOVED / COMMENTED OUT)
+            // =================================================================
+            /*
             if (inputEventReceiver.wasMouseClicked()) {
                 position2di mousePos = inputEventReceiver.getMousePos();
                 core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
@@ -299,6 +356,7 @@ int main() {
                     navmesh->setAgentTarget(sphereAgentId, intersectionPoint);
                 }
             }
+            */
 
             // Update follower targets to formation positions around the player
             if (sphere && sphereAgentId != -1) {
@@ -320,7 +378,7 @@ int main() {
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
             smgr->drawAll();
             guienv->drawAll();
-            navmesh->renderAgentPaths(driver);
+            //navmesh->renderAgentPaths(driver);
             driver->endScene();
         }
         else {
