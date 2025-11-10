@@ -139,7 +139,7 @@ int main() {
         dimension2d<u32>(windowWidth, windowHeight),
         32,
         false,
-        false,
+		true,   // vsync on
         false,
         &inputEventReceiver
     );
@@ -255,9 +255,9 @@ int main() {
         // Player agent with NO collision avoidance
         dtCrowdAgentParams playerParams;
         memset(&playerParams, 0, sizeof(playerParams));
-        playerParams.maxAcceleration = 20.0f;
-        playerParams.maxSpeed = 3.5f;
-        playerParams.collisionQueryRange = 0.0f; // Disable collision avoidance
+        playerParams.maxAcceleration = 35.0f; // INCREASED for snappier start/stop
+        playerParams.maxSpeed = 9.5f;        // Keeping your fast speed
+        playerParams.collisionQueryRange = 0.0f;
         playerParams.updateFlags = DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO;
         // Note: NO DT_CROWD_OBSTACLE_AVOIDANCE and NO DT_CROWD_SEPARATION
 
@@ -270,15 +270,15 @@ int main() {
     /* ===============================
     ENEMY SETUP (Formation Followers)
     ================================ */
-    const int NUM_ENEMIES = 4;
+    const int NUM_ENEMIES = 16;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     const float formationRadius = 1.0f; // Distance from player
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
-    followerParams.maxAcceleration = 15.0f; // Slightly slower acceleration
-    followerParams.maxSpeed = 3.0f;         // Slightly slower than player
+    followerParams.maxAcceleration = 30.0f; // INCREASED for quick swarming action
+    followerParams.maxSpeed = 8.5f; // Slightly slower than player (9.5f)
 
     // KEY SETTINGS: Enable separation between followers, but not with player
     followerParams.separationWeight = 2.0f; // Push away from other followers
@@ -320,6 +320,18 @@ int main() {
         false, true, 0, -1, true
     );
 
+    gui::IGUIStaticText* deltaTimeText = guienv->addStaticText(
+        L"Delta Time: 0.000",
+        rect<s32>(10, 40, 500, 70), // Increased height (70) for larger look
+        false, true, 0, -1, true
+    );
+
+    gui::IGUIStaticText* fpsText = guienv->addStaticText(
+        L"FPS: 00",
+        rect<s32>(10, 70, 500, 100), // Increased height (100) and new line
+        false, true, 0, -1, true
+    );
+
     /* ===============================
     TIMING SETUP
     ================================ */
@@ -335,6 +347,20 @@ int main() {
             u32 currentTime = device->getTimer()->getTime();
             f32 deltaTime = (currentTime - lastTime) / 1000.0f;
             lastTime = currentTime;
+
+            if (deltaTimeText) {
+                // Update Delta Time
+                core::stringw strDelta = L"Delta Time: ";
+                strDelta += core::stringw(deltaTime);
+                deltaTimeText->setText(strDelta.c_str());
+            }
+
+            if (fpsText && driver) {
+                // Update FPS using the driver's built-in function
+                core::stringw strFPS = L"FPS: ";
+                strFPS += driver->getFPS(); // Automatically retrieves FPS
+                fpsText->setText(strFPS.c_str());
+            }
 
             // =================================================================
             // NEW: Player WASD Movement Logic
@@ -417,6 +443,30 @@ int main() {
             }
 
             navmesh->update(deltaTime);
+
+            // =================================================================
+            // NEW: Camera Follow Logic (INSERT HERE)
+            // =================================================================
+            if (sphere && camera) {
+                vector3df playerPos = sphere->getPosition();
+
+                // Camera is fixed 8 units up, looking straight down (Y-axis only offset)
+                const vector3df cameraOffset(0, 8.0f, 0);
+                vector3df desiredCameraPos = playerPos + cameraOffset;
+
+                // Use Lerp for a smoother follow
+                const f32 followSpeed = 5.0f; // Higher value = faster, snappier follow
+                vector3df currentCameraPos = camera->getPosition();
+
+                // Interpolate from current position to desired position
+                vector3df newCameraPos = currentCameraPos.getInterpolated(
+                    desiredCameraPos,
+                    followSpeed * deltaTime
+                );
+
+                camera->setPosition(newCameraPos);
+                camera->setTarget(playerPos); // Always look directly at the player
+            }
 
             // Render scene
             driver->beginScene(true, true, SColor(255, 100, 101, 140));
