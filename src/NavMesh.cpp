@@ -581,6 +581,54 @@ void NavMesh::renderAgentPaths(irr::video::IVideoDriver* driver)
     }
 }
 
+// Add this method to your NavMesh.cpp implementation file
+
+irr::core::vector3df NavMesh::getClosestPointOnNavmesh(const irr::core::vector3df& pos)
+{
+    // If navmesh query isn't ready, return original position
+    if (!_navQuery || !_navMesh)
+    {
+        return pos;
+    }
+
+    // Convert Irrlicht position to Detour format (float array)
+    float queryPos[3] = { pos.X, pos.Y, pos.Z };
+
+    // Search extents - how far to search for nearest polygon
+    float extents[3] = { 2.0f, 4.0f, 2.0f }; // X, Y, Z search radius
+
+    // Query filter - which polygon types we can walk on
+    dtQueryFilter filter;
+    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK);
+    filter.setExcludeFlags(0);
+
+    // Output variables
+    dtPolyRef nearestPoly = 0;
+    float nearestPoint[3] = { 0, 0, 0 };
+
+    // Find the nearest polygon and point on the navmesh
+    dtStatus status = _navQuery->findNearestPoly(
+        queryPos,
+        extents,
+        &filter,
+        &nearestPoly,
+        nearestPoint
+    );
+
+    // If successful, return the clamped point
+    if (dtStatusSucceed(status) && nearestPoly != 0)
+    {
+        return irr::core::vector3df(
+            nearestPoint[0],
+            nearestPoint[1],
+            nearestPoint[2]
+        );
+    }
+
+    // If query failed, return original position
+    return pos;
+}
+
 bool NavMesh::_getMeshBufferData(
     IMeshSceneNode* node,
     std::vector<float>& verts,

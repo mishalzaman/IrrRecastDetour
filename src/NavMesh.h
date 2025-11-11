@@ -165,6 +165,14 @@ public:
     */
     void renderAgentPaths(irr::video::IVideoDriver* driver);
 
+    /**
+     * @brief Finds the closest valid point on the navmesh to the given position.
+     * @param pos The world-space position to query.
+     * @return The closest valid position on the navmesh. Returns original pos if query fails.
+     */
+    irr::core::vector3df getClosestPointOnNavmesh(const irr::core::vector3df& pos);
+
+
 private:
     // Recast/Detour core objects (RAII-managed)
     std::unique_ptr<rcContext, RecastContextDeleter> _ctx;
@@ -197,7 +205,7 @@ private:
     // Links dtCrowd agent IDs to Irrlicht scene nodes
     std::map<int, irr::scene::ISceneNode*> _agentNodeMap;
 
-	const int MAX_AGENTS = 128;
+	const int MAX_AGENTS = 1024;
 
     bool _getMeshBufferData
     (
