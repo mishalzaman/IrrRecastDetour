@@ -2,36 +2,51 @@
 #include <irrlicht.h>
 
 using namespace irr;
+using namespace core;
 
-class InputEventReceiver : public IEventReceiver
-{
+class InputEventListener : public IEventReceiver {
 public:
-    // Constructor
-    InputEventReceiver();
+    bool mouseClicked;
+    position2di mousePos;
+    bool KeyIsDown[KEY_KEY_CODES_COUNT]; // Array to hold key states
 
-    // Call this *after* device creation
-    void Init(gui::IGUIEnvironment* env, core::dimension2du windowSize, core::dimension2du renderSize);
+    InputEventListener() : mouseClicked(false) {
+        // Initialize all key states to false
+        for (u32 i = 0; i < KEY_KEY_CODES_COUNT; ++i)
+            KeyIsDown[i] = false;
+    }
 
-    virtual bool OnEvent(const SEvent& event) override;
+    virtual bool OnEvent(const SEvent& event) {
+        if (event.EventType == EET_MOUSE_INPUT_EVENT) {
+            if (event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN) {
+                mouseClicked = true;
+                mousePos = position2di(event.MouseInput.X, event.MouseInput.Y);
+                // std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
+                return true;
+            }
+        }
 
-    // --- Your poller functions ---
-    f32 getWheelDelta(); // Modified this slightly
+        // Add key event handling
+        if (event.EventType == EET_KEY_INPUT_EVENT) {
+            KeyIsDown[event.KeyInput.Key] = event.KeyInput.PressedDown;
+            return true;
+        }
 
-    // --- New poller for scaled mouse ---
-    const core::position2di& getScaledMousePosition() const { return _scaledMousePos; }
+        return false;
+    }
 
-    // (Add IsKeyDown, etc. if you need them)
+    bool wasMouseClicked() {
+        bool clicked = mouseClicked;
+        mouseClicked = false;
+        return clicked;
+    }
 
-private:
-    // Internal state for polling
-    f32 _wheelDelta;
-    core::position2di _scaledMousePos;
-    // (key states, etc.)
+    position2di getMousePos() const {
+        return mousePos;
+    }
 
-    // GUI scaling helpers
-    gui::IGUIEnvironment* _guienv;
-    core::dimension2du _windowSize;
-    core::dimension2du _renderSize;
-    f32 _scaleX;
-    f32 _scaleY;
+    // Public getter for key states
+    virtual bool IsKeyDown(EKEY_CODE keyCode) const {
+        return KeyIsDown[keyCode];
+    }
 };
