@@ -12,6 +12,7 @@ Game Engine Main Loop - Wonderful 101 Style Movement
 #include <memory>
 #include <vector>
 #include <cmath>
+#include <ctime>
 #include "Config.h"
 #include "NavMesh.h"
 #include "InputEventReceiver.h"
@@ -27,8 +28,13 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-// Calculate trailing formation behind leader
-vector3df calculateTrailingFormationOffset(int index, int totalCount, float radius, const vector3df& forwardDir) {
+// Random number generator
+float randomFloat(float min, float max) {
+    return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
+}
+
+// Calculate random cluster formation behind leader
+vector3df calculateClusterFormationOffset(int index, int totalCount, float baseRadius, const vector3df& forwardDir) {
     const float PI = 3.14159265359f;
 
     // Calculate the "back" direction vector
@@ -40,27 +46,36 @@ vector3df calculateTrailingFormationOffset(int index, int totalCount, float radi
     // Get the angle of the "back" direction
     float backAngle = atan2f(backDir.Z, backDir.X);
 
-    // Use 270-degree arc (1.5 * PI radians) for spread
-    const float totalAngleSpan = 1.5f * PI;
+    // Create clusters with random variation
+    // Use concentric rings with random angular distribution
+    int ring = (index / 16); // 16 agents per ring
 
-    float followerAngle;
-    if (totalCount > 1) {
-        float anglePerFollower = totalAngleSpan / (totalCount - 1);
-        float startAngle = backAngle - (totalAngleSpan / 2.0f);
-        followerAngle = startAngle + (index * anglePerFollower);
-    }
-    else {
-        followerAngle = backAngle;
-    }
+    // Random radius within ring bounds
+    float minRadius = baseRadius + (ring * 0.8f);
+    float maxRadius = baseRadius + (ring * 0.8f) + 0.6f;
+    float radius = randomFloat(minRadius, maxRadius);
+
+    // Random angle with bias toward back
+    // Create a 180-degree arc behind the player with random distribution
+    float angleRange = PI; // 180 degrees
+    float randomAngle = randomFloat(-angleRange / 2.0f, angleRange / 2.0f);
+    float followerAngle = backAngle + randomAngle;
+
+    // Add some random offset for natural clustering
+    float offsetX = randomFloat(-0.2f, 0.2f);
+    float offsetZ = randomFloat(-0.2f, 0.2f);
 
     return vector3df(
-        cosf(followerAngle) * radius,
+        cosf(followerAngle) * radius + offsetX,
         0.0f,
-        sinf(followerAngle) * radius
+        sinf(followerAngle) * radius + offsetZ
     );
 }
 
 int main() {
+    // Seed random number generator for formation variation
+    srand(static_cast<unsigned int>(time(nullptr)));
+
     /* ===============================
     IRRLICHT SETUP
     ================================ */
@@ -200,10 +215,11 @@ int main() {
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
-    const int NUM_SWARM = 256;
+    const int NUM_SWARM = 16;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
-    const float formationRadius = 1.5f; // Distance from player
+    std::vector<vector3df> agentOffsets; // Store random offsets per agent
+    const float formationRadius = 1.0f; // Base distance from player
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
@@ -220,12 +236,17 @@ int main() {
         DT_CROWD_OPTIMIZE_TOPO |
         DT_CROWD_SEPARATION;
 
+    // Pre-calculate random offsets for each agent
+    for (int i = 0; i < NUM_SWARM; i++) {
+        vector3df offset = calculateClusterFormationOffset(i, NUM_SWARM, formationRadius, vector3df(0, 0, 1));
+        agentOffsets.push_back(offset);
+    }
+
     for (int i = 0; i < NUM_SWARM; i++) {
         IMeshSceneNode* enemy = smgr->addSphereSceneNode(0.15f, 16);
         if (enemy) {
-            // Start enemies behind player
-            vector3df offset = calculateTrailingFormationOffset(i, NUM_SWARM, formationRadius, vector3df(0, 0, 1));
-            enemy->setPosition(vector3df(0, 1, 0) + offset);
+            // Use pre-calculated offset
+            enemy->setPosition(vector3df(0, 1, 0) + agentOffsets[i]);
             enemy->setMaterialFlag(EMF_LIGHTING, false);
 
             u8 colorVar = (u8)(200 + (i * 5));
@@ -340,15 +361,25 @@ int main() {
             if (sphere) {
                 vector3df playerPos = sphere->getPosition();
 
+                // Recalculate formation offsets based on current movement direction
                 for (size_t i = 0; i < enemyAgentIds.size(); i++) {
-                    vector3df offset = calculateTrailingFormationOffset(
-                        (int)i,
-                        NUM_SWARM,
-                        formationRadius,
-                        playerForwardDir
+                    // Use stored offset but rotate it based on player's direction
+                    vector3df baseOffset = agentOffsets[i];
+
+                    // Get angle of player's forward direction
+                    float playerAngle = atan2f(playerForwardDir.Z, playerForwardDir.X);
+                    float baseAngle = atan2f(baseOffset.Z, baseOffset.X);
+                    float baseRadius = sqrtf(baseOffset.X * baseOffset.X + baseOffset.Z * baseOffset.Z);
+
+                    // Rotate offset to match player direction
+                    float newAngle = baseAngle + playerAngle - (3.14159265359f / 2.0f); // Adjust for initial orientation
+                    vector3df rotatedOffset(
+                        cosf(newAngle) * baseRadius,
+                        0.0f,
+                        sinf(newAngle) * baseRadius
                     );
 
-                    vector3df targetPos = playerPos + offset;
+                    vector3df targetPos = playerPos + rotatedOffset;
                     navmesh->setAgentTarget(enemyAgentIds[i], targetPos);
                 }
             }
