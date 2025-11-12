@@ -215,7 +215,7 @@ int main() {
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
-    const int NUM_SWARM = 16;
+    const int NUM_SWARM = 128;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     std::vector<vector3df> agentOffsets; // Store random offsets per agent
@@ -223,8 +223,8 @@ int main() {
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
-    followerParams.maxAcceleration = 35.0f;
-    followerParams.maxSpeed = 10.0f; // Slightly faster than player to catch up
+    followerParams.maxAcceleration = 95.0f;
+    followerParams.maxSpeed = 12.0f; // Slightly faster than player to catch up
 
     // Enable separation between followers
     followerParams.separationWeight = 2.5f;
