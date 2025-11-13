@@ -30,7 +30,7 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-const bool RENDER_SWARM = false; // Toggle swarm visibility for debugging
+const bool RENDER_SWARM = true; // Toggle swarm visibility for debugging
 const bool RENDER_PLAYER = false; // Toggle player visibility for debugging
 const bool RENDER_NAVMESH = false; // Toggle navmesh rendering for debugging
 
@@ -119,113 +119,139 @@ struct SoftBodyVertex {
 
 class SoftBodyBlob {
 public:
-    static const int SEGMENTS = 40;
+    static const int SEGMENTS = 64;
     SoftBodyVertex vertices[SEGMENTS];
     vector3df visualCenter;
+    vector3df centerVelocity;
 
-    // Physics Constants (Tuned for tighter response)
-    float stiffness = 350.0f;   // Higher = Snaps to shape faster
-    float damping = 15.0f;      // Reduces oscillation
+    // Physics Constants
+    float stiffness = 60.0f;
+    float damping = 5.0f;       // Increased slightly for stability
     float mass = 1.0f;
-    float tension = 80.0f;      // Neighbor pull strength
+    float tension = 120.0f;
+    float smoothingFactor = 0.35f;
 
     SoftBodyBlob() {
         visualCenter.set(0, 0, 0);
+        centerVelocity.set(0, 0, 0);
         for (int i = 0; i < SEGMENTS; i++) {
-            vertices[i].currentRadius = 1.0f;
+            vertices[i].currentRadius = 1.5f;
             vertices[i].velocity = 0.0f;
-            vertices[i].targetRadius = 1.0f;
+            vertices[i].targetRadius = 1.5f;
         }
     }
 
-    // Intersect ray (origin -> dir) with segment (p1 -> p2)
+    // Helper: Intersect ray with segment
     float getRaySegmentIntersection(const vector3df& origin, const vector3df& dir,
         const vector3df& p1, const vector3df& p2) {
         vector3df v1 = origin - p1;
         vector3df v2 = p2 - p1;
-        vector3df v3 = vector3df(-dir.Z, 0, dir.X); // Perpendicular to direction
-
+        vector3df v3 = vector3df(-dir.Z, 0, dir.X);
         float dot = v2.dotProduct(v3);
-        if (abs(dot) < 0.00001f) return -1.0f; // Parallel
-
-        float t1 = v2.crossProduct(v1).Y / dot; // Distance along ray
-        float t2 = v1.dotProduct(v3) / dot;     // Position on segment (0..1)
-
-        if (t1 >= 0.0f && (t2 >= 0.0f && t2 <= 1.0f))
-            return t1;
-
+        if (abs(dot) < 0.00001f) return -1.0f;
+        float t1 = v2.crossProduct(v1).Y / dot;
+        float t2 = v1.dotProduct(v3) / dot;
+        if (t1 >= 0.0f && (t2 >= 0.0f && t2 <= 1.0f)) return t1;
         return -1.0f;
     }
 
-    void update(float dt, const std::vector<vector3df>& hullPoints, const vector3df& targetCenter) {
-        // 1. SNAP VISUAL CENTER (Fixes the lag issue)
-        // We must keep the center strictly inside the hull for raycasting to work.
-        visualCenter = targetCenter;
+    void update(float dt, const std::vector<vector3df>& hullPoints, const vector3df& targetCenter, float time) {
+        // 1. CENTER PHYSICS (STABILIZED)
+        vector3df diff = targetCenter - visualCenter;
+        float distSq = diff.getLengthSQ();
 
-        // 2. Raycast to find the target shape
+        // Spring force
+        vector3df centerForce = diff * 80.0f - centerVelocity * 10.0f;
+        centerVelocity += centerForce * dt;
+
+        // CAP VELOCITY (Prevents "Explosions" / Jumping)
+        // If velocity is too high, the mesh creates a gap between frames
+        float speed = centerVelocity.getLength();
+        const float MAX_SPEED = 25.0f;
+        if (speed > MAX_SPEED) {
+            centerVelocity = centerVelocity * (MAX_SPEED / speed);
+        }
+
+        visualCenter += centerVelocity * dt;
+
+        // Emergency Teleport only if WAY off (e.g. map change or massive lag spike)
+        // Increased from 2.0f to 100.0f (10 units)
+        if (distSq > 100.0f) {
+            visualCenter = targetCenter;
+            centerVelocity.set(0, 0, 0);
+        }
+
+        // 2. CALCULATE TARGET SHAPE
         float angleStep = (2.0f * 3.14159f) / SEGMENTS;
 
         for (int i = 0; i < SEGMENTS; i++) {
             float angle = i * angleStep;
-            // Note: We invert Z here if your world coordinates vs angle rotation are flipped
-            // But usually (cos, 0, sin) works for X/Z plane
             vector3df dir(cosf(angle), 0, sinf(angle));
-            dir.normalize();
 
             float closestDist = 1000.0f;
             bool hit = false;
 
-            // Check intersection with all hull edges
+            // Optimization: Only check hull points if we are relatively close
+            // (prevents checking dist against distant objects if logic breaks)
             for (size_t h = 0; h < hullPoints.size(); h++) {
                 vector3df p1 = hullPoints[h];
                 vector3df p2 = hullPoints[(h + 1) % hullPoints.size()];
-
                 float dist = getRaySegmentIntersection(visualCenter, dir, p1, p2);
-
-                // We want the closest intersection (in case of complex non-convex shapes, 
-                // though hull is convex, this is just good practice)
                 if (dist > 0.01f && dist < closestDist) {
                     closestDist = dist;
                     hit = true;
                 }
             }
 
-            // If we hit the hull, that's our target radius.
-            // Add slight padding (+0.3f) so the skin encloses the agents fully.
             if (hit) {
-                vertices[i].targetRadius = closestDist + 0.3f;
+                vertices[i].targetRadius = closestDist + 0.5f;
             }
             else {
-                // Fallback: If ray misses (rare with Convex Hull), maintain previous or clamp
-                // Do not shrink to 0.
-                if (vertices[i].targetRadius < 0.5f) vertices[i].targetRadius = 0.5f;
+                // If we are outside the hull or ray fails, shrink slowly, don't snap
+                if (vertices[i].targetRadius > 0.5f)
+                    vertices[i].targetRadius -= 5.0f * dt;
+                if (vertices[i].targetRadius < 0.5f)
+                    vertices[i].targetRadius = 0.5f;
             }
+
+            // Fluid Ripples
+            float noise = sinf(angle * 4.0f + time * 5.0f) * 0.15f;
+            vertices[i].targetRadius += noise;
         }
 
-        // 3. Soft Body Physics Integration
+        // 3. INTEGRATE PHYSICS (With Safety Clamps)
         for (int i = 0; i < SEGMENTS; i++) {
             SoftBodyVertex& v = vertices[i];
 
-            // Hooke's Law
             float displacement = v.targetRadius - v.currentRadius;
             float force = (stiffness * displacement) - (damping * v.velocity);
 
-            // Neighbor Tension (smoothing)
+            // Neighbor Tension
             int prev = (i - 1 + SEGMENTS) % SEGMENTS;
             int next = (i + 1) % SEGMENTS;
             float neighborAvg = (vertices[prev].currentRadius + vertices[next].currentRadius) / 2.0f;
-            float tensionForce = (neighborAvg - v.currentRadius) * tension;
 
-            force += tensionForce;
+            // Add tension
+            force += (neighborAvg - v.currentRadius) * tension;
 
-            // Integrate
-            float acceleration = force / mass;
-            v.velocity += acceleration * dt;
+            v.velocity += (force / mass) * dt;
             v.currentRadius += v.velocity * dt;
 
-            // Sanity limits
+            // Absolute Min/Max clamping to prevent rendering artifacts
             if (v.currentRadius < 0.1f) v.currentRadius = 0.1f;
-            if (v.currentRadius > 50.0f) v.currentRadius = 50.0f; // Prevent explosion
+            if (v.currentRadius > 50.0f) v.currentRadius = 50.0f;
+        }
+
+        // 4. SMOOTHING
+        for (int pass = 0; pass < 2; pass++) {
+            std::vector<float> smoothedRadii(SEGMENTS);
+            for (int i = 0; i < SEGMENTS; i++) {
+                int prev = (i - 1 + SEGMENTS) % SEGMENTS;
+                int next = (i + 1) % SEGMENTS;
+                smoothedRadii[i] = vertices[i].currentRadius * (1.0f - smoothingFactor) +
+                    (vertices[prev].currentRadius + vertices[next].currentRadius) * (smoothingFactor / 2.0f);
+            }
+            for (int i = 0; i < SEGMENTS; i++) vertices[i].currentRadius = smoothedRadii[i];
         }
     }
 };
@@ -376,7 +402,7 @@ int main() {
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
-    const int NUM_SWARM = 64;
+    const int NUM_SWARM = 32;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     std::vector<vector3df> agentOffsets; // Store random offsets per agent
@@ -568,120 +594,125 @@ int main() {
             navmesh->update(deltaTime);
 
             // =================================================================
-            // UPDATE SWARM HULL MESH (SOFT BODY + NAVMESH CLAMPING)
+            // UPDATE SWARM HULL MESH (LIQUID STYLE)
             // =================================================================
             if (swarmNode && sphere && enemies.size() >= 3) {
 
-                // 1. Collect positions & Calculate Centroid (actualCenter)
-                // We need the centroid to anchor the soft body physics
+                // 1. Calculate Centroid
+                vector3df actualCenter(0, 0, 0);
                 std::vector<vector3df> swarmPositions;
                 swarmPositions.reserve(enemies.size() + 1);
-
-                vector3df actualCenter(0, 0, 0);
 
                 for (IMeshSceneNode* enemy : enemies) {
                     vector3df pos = enemy->getPosition();
                     swarmPositions.push_back(pos);
                     actualCenter += pos;
                 }
-
-                // Add player to the calculation
-                vector3df playerPos = sphere->getPosition();
-                swarmPositions.push_back(playerPos);
-                actualCenter += playerPos;
-
-                // Average the positions
+                swarmPositions.push_back(sphere->getPosition());
+                actualCenter += sphere->getPosition();
                 actualCenter /= (float)swarmPositions.size();
 
-                // 2. Calculate Rigid Convex Hull (The Skeleton)
+                // 2. Calculate Rigid Convex Hull
                 std::vector<vector3df> rigidHull = calculateConvexHull(swarmPositions);
 
                 if (rigidHull.size() >= 3) {
                     swarmNode->setVisible(true);
 
-                    // 3. Update Soft Body Physics (Calculate ideal shape)
-                    // 'actualCenter' is now valid here
-                    softBody.update(deltaTime, rigidHull, actualCenter);
+                    // 3. Update Soft Body Physics
+                    // Pass total time (in seconds) for ripple effects
+                    float timeSec = device->getTimer()->getTime() / 1000.0f;
+                    softBody.update(deltaTime, rigidHull, actualCenter, timeSec);
 
                     // 4. Generate Mesh & CLAMP TO NAVMESH
                     scene::SMeshBuffer* buffer = (scene::SMeshBuffer*)swarmNode->getMesh()->getMeshBuffer(0);
                     buffer->Vertices.clear();
                     buffer->Indices.clear();
 
-                    const float meshY = 0.2f; // Lift slightly above floor to avoid z-fighting
-                    const video::SColor centerColor(200, 100, 150, 255);
-                    const video::SColor edgeColor(180, 150, 200, 255);
+                    const float meshY = 0.2f;
+                    // Liquid Colors (Darker blue center, lighter rim)
+                    const video::SColor centerColor(220, 50, 100, 200);
+                    const video::SColor edgeColor(200, 80, 150, 255);
 
-                    // A. Add Center Vertex
-                    // Clamp center to navmesh to be safe
+                    // A. Clamp Center (Safety against void)
                     vector3df clampedCenter = navmesh->getClosestPointOnNavmesh(softBody.visualCenter);
-                    softBody.visualCenter = clampedCenter;
+
+                    // If the center dragged too far into a wall, push it out slightly
+                    // This prevents the "pancake" effect from being too extreme
+                    if (clampedCenter.getDistanceFrom(softBody.visualCenter) > 0.5f) {
+                        softBody.visualCenter = clampedCenter;
+                        softBody.centerVelocity.set(0, 0, 0); // Kill momentum on impact
+                    }
 
                     buffer->Vertices.push_back(
                         video::S3DVertex(clampedCenter.X, meshY, clampedCenter.Z,
                             0, 1, 0, centerColor, 0.5f, 0.5f)
                     );
-                    u16 centerIndex = 0;
 
-                    // B. Add Ring Vertices (With Wall Collision)
+                    // B. Add Ring Vertices
                     float angleStep = (2.0f * 3.14159f) / SoftBodyBlob::SEGMENTS;
 
                     for (int i = 0; i < SoftBodyBlob::SEGMENTS; i++) {
                         float angle = i * angleStep;
                         float r = softBody.vertices[i].currentRadius;
 
-                        // Calculate where physics wants the vertex to be
                         vector3df idealPos;
                         idealPos.X = softBody.visualCenter.X + cosf(angle) * r;
                         idealPos.Y = softBody.visualCenter.Y;
                         idealPos.Z = softBody.visualCenter.Z + sinf(angle) * r;
 
-                        // Ask NavMesh for the valid limit
                         vector3df clampedPos = navmesh->getClosestPointOnNavmesh(idealPos);
-
-                        // Feedback Loop: Detect Wall Collision
                         float clampedDist = clampedPos.getDistanceFrom(softBody.visualCenter);
 
-                        // If the wall forced us closer than the physics wanted
-                        if (clampedDist < r - 0.01f) {
-                            // "Squish" the physics vertex against the wall
+                        // Wall Collision / Squish
+                        if (clampedDist < r - 0.05f) { // Tolerance
                             softBody.vertices[i].currentRadius = clampedDist;
-                            softBody.vertices[i].velocity = 0.0f;
+                            // Dampen velocity heavily on wall contact (Sticky friction)
+                            softBody.vertices[i].velocity *= 0.5f;
                         }
 
-                        // Add to Mesh
+                        // UV Mapping for a circular texture
+                        float u = 0.5f + (cosf(angle) * 0.5f);
+                        float v = 0.5f + (sinf(angle) * 0.5f);
+
                         buffer->Vertices.push_back(
                             video::S3DVertex(clampedPos.X, meshY, clampedPos.Z,
-                                0, 1, 0, edgeColor,
-                                (float)i / SoftBodyBlob::SEGMENTS, 0.0f)
+                                0, 1, 0, edgeColor, u, v)
                         );
                     }
 
-                    // C. Create Indices (Triangle Fan)
+                    // C. Indices (Triangle Fan)
                     for (u16 i = 0; i < SoftBodyBlob::SEGMENTS; ++i) {
-                        u16 v1_idx = 1 + i;
-                        u16 v2_idx = 1 + ((i + 1) % SoftBodyBlob::SEGMENTS);
-
-                        buffer->Indices.push_back(centerIndex);
-                        buffer->Indices.push_back(v1_idx);
-                        buffer->Indices.push_back(v2_idx);
+                        buffer->Indices.push_back(0);
+                        buffer->Indices.push_back(1 + i);
+                        buffer->Indices.push_back(1 + ((i + 1) % SoftBodyBlob::SEGMENTS));
                     }
 
-                    // D. Update Bounding Box
+                    // D. Update Bounding Box (With Padding to prevent flickering)
                     core::aabbox3df bbox;
+                    // Initialize with center
                     bbox.reset(softBody.visualCenter);
+
+                    // Add all vertices
                     for (int i = 0; i < SoftBodyBlob::SEGMENTS; i++) {
                         bbox.addInternalPoint(buffer->Vertices[i + 1].Pos);
                     }
-                    bbox.MinEdge.Y = meshY - 0.5f;
-                    bbox.MaxEdge.Y = meshY + 0.5f;
-                    buffer->BoundingBox = bbox;
 
-                    buffer->setDirty();
+                    // CRITICAL FIX: Pad the bounding box!
+                    // Physics can move vertices outside the box between frames if fast.
+                    // We add a margin of safety so culling doesn't hide the mesh prematurely.
+                    vector3df padding(2.0f, 2.0f, 2.0f);
+                    bbox.MinEdge -= padding;
+                    bbox.MaxEdge += padding;
+
+                    // Ensure Y height covers the mesh
+                    bbox.MinEdge.Y = meshY - 1.0f;
+                    bbox.MaxEdge.Y = meshY + 1.0f;
+
+                    buffer->BoundingBox = bbox;
+                    buffer->setDirty(); // IMPORTANT: Tells Irrlicht to update hardware buffers
+
+                    // Update the SceneNode's box too
                     swarmNode->getMesh()->setBoundingBox(bbox);
-                }
-                else {
-                    swarmNode->setVisible(false);
                 }
             }
 
