@@ -30,47 +30,35 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
+const bool RENDER_SWARM = false; // Toggle swarm visibility for debugging
+const bool RENDER_PLAYER = false; // Toggle player visibility for debugging
+const bool RENDER_NAVMESH = false; // Toggle navmesh rendering for debugging
+
 // Random number generator
 float randomFloat(float min, float max) {
     return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
 }
 
-// Calculate random cluster formation behind leader
-vector3df calculateClusterFormationOffset(int index, int totalCount, float baseRadius, const vector3df& forwardDir) {
+// Calculate surrounding ring formation (360 degrees)
+vector3df calculateSurroundOffset(int index, int totalCount, float baseRadius) {
     const float PI = 3.14159265359f;
 
-    // Calculate the "back" direction vector
-    vector3df backDir = -forwardDir;
-    if (backDir.getLengthSQ() < 0.001f) {
-        backDir.set(0, 0, -1); // Default to -Z if no forward dir
-    }
+    // 1. Distribute agents evenly around a full circle (0 to 2*PI)
+    float angleStep = (2.0f * PI) / (float)totalCount;
+    float angle = index * angleStep;
 
-    // Get the angle of the "back" direction
-    float backAngle = atan2f(backDir.Z, backDir.X);
+    // 2. Add Randomness (Gish is a blob, not a perfect soldier ring)
+    // Vary the radius slightly so they aren't in a perfect hard line
+    float randomRadius = baseRadius + randomFloat(-0.3f, 0.3f);
 
-    // Create clusters with random variation
-    // Use concentric rings with random angular distribution
-    int ring = (index / 16); // 16 agents per ring
+    // Vary the angle slightly for organic overlapping
+    float randomAngle = angle + randomFloat(-0.1f, 0.1f);
 
-    // Random radius within ring bounds
-    float minRadius = baseRadius + (ring * 0.8f);
-    float maxRadius = baseRadius + (ring * 0.8f) + 0.6f;
-    float radius = randomFloat(minRadius, maxRadius);
-
-    // Random angle with bias toward back
-    // Create a 180-degree arc behind the player with random distribution
-    float angleRange = PI; // 180 degrees
-    float randomAngle = randomFloat(-angleRange / 2.0f, angleRange / 2.0f);
-    float followerAngle = backAngle + randomAngle;
-
-    // Add some random offset for natural clustering
-    float offsetX = randomFloat(-0.2f, 0.2f);
-    float offsetZ = randomFloat(-0.2f, 0.2f);
-
+    // 3. Convert Polar to Cartesian
     return vector3df(
-        cosf(followerAngle) * radius + offsetX,
+        cosf(randomAngle) * randomRadius,
         0.0f,
-        sinf(followerAngle) * radius + offsetZ
+        sinf(randomAngle) * randomRadius
     );
 }
 
@@ -119,6 +107,128 @@ std::vector<vector3df> calculateConvexHull(std::vector<vector3df>& points) {
     return hull;
 }
 
+// ==========================================
+// SOFT BODY PHYSICS HELPERS (FIXED)
+// ==========================================
+
+struct SoftBodyVertex {
+    float currentRadius;
+    float velocity;
+    float targetRadius;
+};
+
+class SoftBodyBlob {
+public:
+    static const int SEGMENTS = 40;
+    SoftBodyVertex vertices[SEGMENTS];
+    vector3df visualCenter;
+
+    // Physics Constants (Tuned for tighter response)
+    float stiffness = 350.0f;   // Higher = Snaps to shape faster
+    float damping = 15.0f;      // Reduces oscillation
+    float mass = 1.0f;
+    float tension = 80.0f;      // Neighbor pull strength
+
+    SoftBodyBlob() {
+        visualCenter.set(0, 0, 0);
+        for (int i = 0; i < SEGMENTS; i++) {
+            vertices[i].currentRadius = 1.0f;
+            vertices[i].velocity = 0.0f;
+            vertices[i].targetRadius = 1.0f;
+        }
+    }
+
+    // Intersect ray (origin -> dir) with segment (p1 -> p2)
+    float getRaySegmentIntersection(const vector3df& origin, const vector3df& dir,
+        const vector3df& p1, const vector3df& p2) {
+        vector3df v1 = origin - p1;
+        vector3df v2 = p2 - p1;
+        vector3df v3 = vector3df(-dir.Z, 0, dir.X); // Perpendicular to direction
+
+        float dot = v2.dotProduct(v3);
+        if (abs(dot) < 0.00001f) return -1.0f; // Parallel
+
+        float t1 = v2.crossProduct(v1).Y / dot; // Distance along ray
+        float t2 = v1.dotProduct(v3) / dot;     // Position on segment (0..1)
+
+        if (t1 >= 0.0f && (t2 >= 0.0f && t2 <= 1.0f))
+            return t1;
+
+        return -1.0f;
+    }
+
+    void update(float dt, const std::vector<vector3df>& hullPoints, const vector3df& targetCenter) {
+        // 1. SNAP VISUAL CENTER (Fixes the lag issue)
+        // We must keep the center strictly inside the hull for raycasting to work.
+        visualCenter = targetCenter;
+
+        // 2. Raycast to find the target shape
+        float angleStep = (2.0f * 3.14159f) / SEGMENTS;
+
+        for (int i = 0; i < SEGMENTS; i++) {
+            float angle = i * angleStep;
+            // Note: We invert Z here if your world coordinates vs angle rotation are flipped
+            // But usually (cos, 0, sin) works for X/Z plane
+            vector3df dir(cosf(angle), 0, sinf(angle));
+            dir.normalize();
+
+            float closestDist = 1000.0f;
+            bool hit = false;
+
+            // Check intersection with all hull edges
+            for (size_t h = 0; h < hullPoints.size(); h++) {
+                vector3df p1 = hullPoints[h];
+                vector3df p2 = hullPoints[(h + 1) % hullPoints.size()];
+
+                float dist = getRaySegmentIntersection(visualCenter, dir, p1, p2);
+
+                // We want the closest intersection (in case of complex non-convex shapes, 
+                // though hull is convex, this is just good practice)
+                if (dist > 0.01f && dist < closestDist) {
+                    closestDist = dist;
+                    hit = true;
+                }
+            }
+
+            // If we hit the hull, that's our target radius.
+            // Add slight padding (+0.3f) so the skin encloses the agents fully.
+            if (hit) {
+                vertices[i].targetRadius = closestDist + 0.3f;
+            }
+            else {
+                // Fallback: If ray misses (rare with Convex Hull), maintain previous or clamp
+                // Do not shrink to 0.
+                if (vertices[i].targetRadius < 0.5f) vertices[i].targetRadius = 0.5f;
+            }
+        }
+
+        // 3. Soft Body Physics Integration
+        for (int i = 0; i < SEGMENTS; i++) {
+            SoftBodyVertex& v = vertices[i];
+
+            // Hooke's Law
+            float displacement = v.targetRadius - v.currentRadius;
+            float force = (stiffness * displacement) - (damping * v.velocity);
+
+            // Neighbor Tension (smoothing)
+            int prev = (i - 1 + SEGMENTS) % SEGMENTS;
+            int next = (i + 1) % SEGMENTS;
+            float neighborAvg = (vertices[prev].currentRadius + vertices[next].currentRadius) / 2.0f;
+            float tensionForce = (neighborAvg - v.currentRadius) * tension;
+
+            force += tensionForce;
+
+            // Integrate
+            float acceleration = force / mass;
+            v.velocity += acceleration * dt;
+            v.currentRadius += v.velocity * dt;
+
+            // Sanity limits
+            if (v.currentRadius < 0.1f) v.currentRadius = 0.1f;
+            if (v.currentRadius > 50.0f) v.currentRadius = 50.0f; // Prevent explosion
+        }
+    }
+};
 
 int main() {
     // Seed random number generator for formation variation
@@ -240,7 +350,9 @@ int main() {
         return 1;
     }
 
-    navmesh->renderNavMesh();
+    if (RENDER_NAVMESH) {
+        navmesh->renderNavMesh();
+    }
 
     /* ===============================
     PLAYER SPHERE SETUP (NO NAVMESH AGENT)
@@ -258,16 +370,17 @@ int main() {
         sphere->setMaterialFlag(EMF_LIGHTING, false);
         sphere->setMaterialTexture(0, 0);
         sphere->getMaterial(0).DiffuseColor = SColor(255, 100, 100, 255); // Blue for player
+        sphere->setVisible(RENDER_PLAYER);
     }
 
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
-    const int NUM_SWARM = 16;
+    const int NUM_SWARM = 64;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     std::vector<vector3df> agentOffsets; // Store random offsets per agent
-    const float formationRadius = 1.0f; // Base distance from player
+    const float formationRadius = 1.5f; // Base distance from player
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
@@ -286,7 +399,8 @@ int main() {
 
     // Pre-calculate random offsets for each agent
     for (int i = 0; i < NUM_SWARM; i++) {
-        vector3df offset = calculateClusterFormationOffset(i, NUM_SWARM, formationRadius, vector3df(0, 0, 1));
+        // REMOVED: vector3df(0, 0, 1) argument (direction doesn't matter for a circle)
+        vector3df offset = calculateSurroundOffset(i, NUM_SWARM, formationRadius);
         agentOffsets.push_back(offset);
     }
 
@@ -296,7 +410,7 @@ int main() {
             // Use pre-calculated offset
             enemy->setPosition(vector3df(0, 1, 0) + agentOffsets[i]);
             enemy->setMaterialFlag(EMF_LIGHTING, false);
-            //enemy->setVisible(false);
+            enemy->setVisible(RENDER_SWARM);
 
             u8 colorVar = (u8)(200 + (i * 5));
             enemy->getMaterial(0).DiffuseColor = SColor(255, colorVar, 0, 0);
@@ -366,6 +480,8 @@ int main() {
     /* ===============================
     MAIN GAME LOOP
     ================================ */
+    SoftBodyBlob softBody;
+
     while (device->run()) {
         if (device->isWindowActive()) {
             u32 currentTime = device->getTimer()->getTime();
@@ -432,30 +548,18 @@ int main() {
             }
 
             // =================================================================
-            // UPDATE SWARM FORMATION
+            // UPDATE SWARM FORMATION (SURROUND)
             // =================================================================
             if (sphere) {
                 vector3df playerPos = sphere->getPosition();
 
-                // Recalculate formation offsets based on current movement direction
                 for (size_t i = 0; i < enemyAgentIds.size(); i++) {
-                    // Use stored offset but rotate it based on player's direction
-                    vector3df baseOffset = agentOffsets[i];
+                    // Simple: Target = Player + Offset
+                    // We do NOT rotate the offset by playerForwardDir. 
+                    // This keeps the "North" agent always North, reducing jitter.
 
-                    // Get angle of player's forward direction
-                    float playerAngle = atan2f(playerForwardDir.Z, playerForwardDir.X);
-                    float baseAngle = atan2f(baseOffset.Z, baseOffset.X);
-                    float baseRadius = sqrtf(baseOffset.X * baseOffset.X + baseOffset.Z * baseOffset.Z);
+                    vector3df targetPos = playerPos + agentOffsets[i];
 
-                    // Rotate offset to match player direction
-                    float newAngle = baseAngle + playerAngle - (3.14159265359f / 2.0f); // Adjust for initial orientation
-                    vector3df rotatedOffset(
-                        cosf(newAngle) * baseRadius,
-                        0.0f,
-                        sinf(newAngle) * baseRadius
-                    );
-
-                    vector3df targetPos = playerPos + rotatedOffset;
                     navmesh->setAgentTarget(enemyAgentIds[i], targetPos);
                 }
             }
@@ -464,160 +568,120 @@ int main() {
             navmesh->update(deltaTime);
 
             // =================================================================
-            // UPDATE SWARM HULL MESH (with NavMesh Boundary Clipping)
+            // UPDATE SWARM HULL MESH (SOFT BODY + NAVMESH CLAMPING)
             // =================================================================
             if (swarmNode && sphere && enemies.size() >= 3) {
-                // 1. Collect all swarm agent positions (they're already clamped to navmesh)
+
+                // 1. Collect positions & Calculate Centroid (actualCenter)
+                // We need the centroid to anchor the soft body physics
                 std::vector<vector3df> swarmPositions;
                 swarmPositions.reserve(enemies.size() + 1);
 
+                vector3df actualCenter(0, 0, 0);
+
                 for (IMeshSceneNode* enemy : enemies) {
-                    swarmPositions.push_back(enemy->getPosition());
+                    vector3df pos = enemy->getPosition();
+                    swarmPositions.push_back(pos);
+                    actualCenter += pos;
                 }
 
-                // Add player position
-                swarmPositions.push_back(sphere->getPosition());
+                // Add player to the calculation
+                vector3df playerPos = sphere->getPosition();
+                swarmPositions.push_back(playerPos);
+                actualCenter += playerPos;
 
-                // 2. Calculate the 2D convex hull from swarm positions
-                std::vector<vector3df> hull = calculateConvexHull(swarmPositions);
+                // Average the positions
+                actualCenter /= (float)swarmPositions.size();
 
-                if (hull.size() < 3) {
-                    swarmNode->setVisible(false);
+                // 2. Calculate Rigid Convex Hull (The Skeleton)
+                std::vector<vector3df> rigidHull = calculateConvexHull(swarmPositions);
+
+                if (rigidHull.size() >= 3) {
+                    swarmNode->setVisible(true);
+
+                    // 3. Update Soft Body Physics (Calculate ideal shape)
+                    // 'actualCenter' is now valid here
+                    softBody.update(deltaTime, rigidHull, actualCenter);
+
+                    // 4. Generate Mesh & CLAMP TO NAVMESH
+                    scene::SMeshBuffer* buffer = (scene::SMeshBuffer*)swarmNode->getMesh()->getMeshBuffer(0);
+                    buffer->Vertices.clear();
+                    buffer->Indices.clear();
+
+                    const float meshY = 0.2f; // Lift slightly above floor to avoid z-fighting
+                    const video::SColor centerColor(200, 100, 150, 255);
+                    const video::SColor edgeColor(180, 150, 200, 255);
+
+                    // A. Add Center Vertex
+                    // Clamp center to navmesh to be safe
+                    vector3df clampedCenter = navmesh->getClosestPointOnNavmesh(softBody.visualCenter);
+                    softBody.visualCenter = clampedCenter;
+
+                    buffer->Vertices.push_back(
+                        video::S3DVertex(clampedCenter.X, meshY, clampedCenter.Z,
+                            0, 1, 0, centerColor, 0.5f, 0.5f)
+                    );
+                    u16 centerIndex = 0;
+
+                    // B. Add Ring Vertices (With Wall Collision)
+                    float angleStep = (2.0f * 3.14159f) / SoftBodyBlob::SEGMENTS;
+
+                    for (int i = 0; i < SoftBodyBlob::SEGMENTS; i++) {
+                        float angle = i * angleStep;
+                        float r = softBody.vertices[i].currentRadius;
+
+                        // Calculate where physics wants the vertex to be
+                        vector3df idealPos;
+                        idealPos.X = softBody.visualCenter.X + cosf(angle) * r;
+                        idealPos.Y = softBody.visualCenter.Y;
+                        idealPos.Z = softBody.visualCenter.Z + sinf(angle) * r;
+
+                        // Ask NavMesh for the valid limit
+                        vector3df clampedPos = navmesh->getClosestPointOnNavmesh(idealPos);
+
+                        // Feedback Loop: Detect Wall Collision
+                        float clampedDist = clampedPos.getDistanceFrom(softBody.visualCenter);
+
+                        // If the wall forced us closer than the physics wanted
+                        if (clampedDist < r - 0.01f) {
+                            // "Squish" the physics vertex against the wall
+                            softBody.vertices[i].currentRadius = clampedDist;
+                            softBody.vertices[i].velocity = 0.0f;
+                        }
+
+                        // Add to Mesh
+                        buffer->Vertices.push_back(
+                            video::S3DVertex(clampedPos.X, meshY, clampedPos.Z,
+                                0, 1, 0, edgeColor,
+                                (float)i / SoftBodyBlob::SEGMENTS, 0.0f)
+                        );
+                    }
+
+                    // C. Create Indices (Triangle Fan)
+                    for (u16 i = 0; i < SoftBodyBlob::SEGMENTS; ++i) {
+                        u16 v1_idx = 1 + i;
+                        u16 v2_idx = 1 + ((i + 1) % SoftBodyBlob::SEGMENTS);
+
+                        buffer->Indices.push_back(centerIndex);
+                        buffer->Indices.push_back(v1_idx);
+                        buffer->Indices.push_back(v2_idx);
+                    }
+
+                    // D. Update Bounding Box
+                    core::aabbox3df bbox;
+                    bbox.reset(softBody.visualCenter);
+                    for (int i = 0; i < SoftBodyBlob::SEGMENTS; i++) {
+                        bbox.addInternalPoint(buffer->Vertices[i + 1].Pos);
+                    }
+                    bbox.MinEdge.Y = meshY - 0.5f;
+                    bbox.MaxEdge.Y = meshY + 0.5f;
+                    buffer->BoundingBox = bbox;
+
+                    buffer->setDirty();
+                    swarmNode->getMesh()->setBoundingBox(bbox);
                 }
                 else {
-                    // 3. Clamp all hull vertices to navmesh and validate
-                    std::vector<vector3df> clampedHull;
-                    clampedHull.reserve(hull.size() * 2); // Reserve extra space for edge insertions
-
-                    for (size_t i = 0; i < hull.size(); ++i) {
-                        vector3df currentPoint = hull[i];
-                        vector3df nextPoint = hull[(i + 1) % hull.size()];
-
-                        // Clamp current point to navmesh
-                        vector3df clampedCurrent = navmesh->getClosestPointOnNavmesh(currentPoint);
-
-                        // Check if current point moved significantly (it was off navmesh)
-                        float currentDistSq = (clampedCurrent - currentPoint).getLengthSQ();
-                        bool currentWasOffMesh = currentDistSq > 0.01f;
-
-                        // Add the clamped current point
-                        clampedHull.push_back(clampedCurrent);
-
-                        // Check edge between current and next point
-                        // Sample points along the edge to detect if it crosses navmesh boundary
-                        const int edgeSamples = 8;
-                        vector3df lastValidPoint = clampedCurrent;
-
-                        for (int j = 1; j < edgeSamples; ++j) {
-                            float t = (float)j / (float)edgeSamples;
-                            vector3df edgePoint = currentPoint.getInterpolated(nextPoint, t);
-                            vector3df clampedEdge = navmesh->getClosestPointOnNavmesh(edgePoint);
-
-                            float edgeDistSq = (clampedEdge - edgePoint).getLengthSQ();
-
-                            // If this edge point is off navmesh, insert the boundary point
-                            if (edgeDistSq > 0.01f) {
-                                // Only add if it's different enough from last point
-                                float diffSq = (clampedEdge - lastValidPoint).getLengthSQ();
-                                if (diffSq > 0.04f) { // Minimum spacing between points
-                                    clampedHull.push_back(clampedEdge);
-                                    lastValidPoint = clampedEdge;
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Remove duplicate points (points that are too close together)
-                    std::vector<vector3df> finalHull;
-                    finalHull.reserve(clampedHull.size());
-
-                    for (size_t i = 0; i < clampedHull.size(); ++i) {
-                        bool isDuplicate = false;
-                        for (size_t j = 0; j < finalHull.size(); ++j) {
-                            float distSq = (clampedHull[i] - finalHull[j]).getLengthSQ();
-                            if (distSq < 0.01f) { // Too close, consider duplicate
-                                isDuplicate = true;
-                                break;
-                            }
-                        }
-                        if (!isDuplicate) {
-                            finalHull.push_back(clampedHull[i]);
-                        }
-                    }
-
-                    // 5. Recalculate convex hull from clamped points (they may no longer be convex)
-                    if (finalHull.size() >= 3) {
-                        hull = calculateConvexHull(finalHull);
-                    }
-                    else {
-                        hull = finalHull;
-                    }
-
-                    if (hull.size() < 3) {
-                        swarmNode->setVisible(false);
-                    }
-                    else {
-                        swarmNode->setVisible(true);
-
-                        // 6. Get the mesh buffer
-                        scene::SMeshBuffer* buffer = (scene::SMeshBuffer*)swarmNode->getMesh()->getMeshBuffer(0);
-
-                        // 7. Clear buffers
-                        buffer->Vertices.clear();
-                        buffer->Indices.clear();
-
-                        // 8. Calculate swarm center (use actual agent positions, not hull)
-                        vector3df swarmCenter(0, 0, 0);
-                        for (IMeshSceneNode* enemy : enemies) {
-                            swarmCenter += enemy->getPosition();
-                        }
-                        swarmCenter += sphere->getPosition();
-                        swarmCenter /= (float)(enemies.size() + 1);
-
-                        // 9. Triangulate the hull (fan from swarm center)
-                        const video::SColor vColor(255, 150, 200, 255);
-                        const float meshY = 0.1f;
-
-                        // Add center vertex
-                        buffer->Vertices.push_back(
-                            video::S3DVertex(swarmCenter.X, meshY, swarmCenter.Z,
-                                0, 1, 0, vColor, 0.5f, 0.5f)
-                        );
-                        u16 centerIndex = 0;
-
-                        // Add all hull vertices
-                        for (const auto& v : hull) {
-                            buffer->Vertices.push_back(
-                                video::S3DVertex(v.X, meshY, v.Z,
-                                    0, 1, 0, vColor, 0.0f, 0.0f)
-                            );
-                        }
-
-                        // 10. Create indices for the triangle fan
-                        u16 hullVertexCount = (u16)hull.size();
-                        for (u16 i = 0; i < hullVertexCount; ++i) {
-                            u16 v1_idx = 1 + i;
-                            u16 v2_idx = 1 + ((i + 1) % hullVertexCount);
-
-                            buffer->Indices.push_back(centerIndex);
-                            buffer->Indices.push_back(v1_idx);
-                            buffer->Indices.push_back(v2_idx);
-                        }
-
-                        // 11. Set bounding box
-                        core::aabbox3df bbox;
-                        bbox.reset(swarmCenter);
-                        for (const auto& v : hull) {
-                            bbox.addInternalPoint(v);
-                        }
-                        bbox.MinEdge.Y = meshY - 0.5f;
-                        bbox.MaxEdge.Y = meshY + 0.5f;
-                        buffer->BoundingBox = bbox;
-
-                        // 12. Update mesh
-                        buffer->setDirty();
-                        swarmNode->getMesh()->setBoundingBox(bbox);
-                    }
+                    swarmNode->setVisible(false);
                 }
             }
 
