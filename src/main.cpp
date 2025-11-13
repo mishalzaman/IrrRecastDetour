@@ -16,7 +16,7 @@ Game Engine Main Loop - Wonderful 101 Style Movement
 #include <ctime>
 #include <algorithm> // For std::sort (Convex Hull)
 #include "Config.h"
-#include "NavMesh.h"
+#include "StaticNavMesh.h"
 #include "InputEventReceiver.h"
 
 using namespace irr;
@@ -348,7 +348,7 @@ int main() {
     /* ===============================
     PATHFINDING SETUP
     ================================ */
-    NavMesh* navmesh = new NavMesh(smgr->getRootSceneNode(), smgr, -1);
+    StaticNavMesh* navmesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr, -1);
     NavMeshParams params;
 
     if (!navmesh->build(levelNode, params)) {
