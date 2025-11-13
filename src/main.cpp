@@ -385,7 +385,7 @@ int main() {
     SWARM SETUP (Formation Followers)
     ================================ */
     // Try increasing this number! The blob size will now grow automatically.
-    const int NUM_SWARM = 32;
+    const int NUM_SWARM = 64;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     std::vector<vector3df> agentOffsets;
@@ -438,8 +438,6 @@ int main() {
     ================================ */
     scene::SMesh* swarmMesh = new scene::SMesh();
     // Use CDynamicMeshBuffer for efficient per-frame updates
-    // Note: In 1.8.5, CDynamicMeshBuffer is just a typedef for SMeshBuffer
-    // but we still need to get the buffer from the mesh.
     scene::IMeshBuffer* swarmBuffer = new scene::SMeshBuffer();
     swarmMesh->addMeshBuffer(swarmBuffer);
     swarmBuffer->drop(); // Mesh now owns the buffer
@@ -451,12 +449,21 @@ int main() {
         swarmNode->setMaterialFlag(EMF_LIGHTING, false);
         swarmNode->setMaterialFlag(EMF_BACK_FACE_CULLING, false); // See both sides
 
-        // Use EMF_WIREFRAME for debugging the hull shape
-        // swarmNode->setMaterialFlag(EMF_WIREFRAME, true); 
+        // Load the requested water texture for tiling
+        if (driver->getTexture("assets/water.png")) {
+            swarmNode->setMaterialTexture(0, driver->getTexture("assets/water.png"));
 
-        // Set to a semi-transparent material
-        swarmNode->getMaterial(0).DiffuseColor = SColor(150, 150, 200, 255); // Semi-transparent blue/white
-        swarmNode->setMaterialType(EMT_TRANSPARENT_ALPHA_CHANNEL);
+            // Important: Set texture wrap to REPEAT for tiling
+            swarmNode->getMaterial(0).TextureLayer[0].TextureWrapU = video::ETC_REPEAT;
+            swarmNode->getMaterial(0).TextureLayer[0].TextureWrapV = video::ETC_REPEAT;
+        }
+
+        // Use EMT_TRANSPARENT_VERTEX_ALPHA so we can control opacity via vertex colors,
+        // even if the texture itself is opaque.
+        swarmNode->setMaterialType(EMT_TRANSPARENT_VERTEX_ALPHA);
+
+        // Use semi-transparent base colors
+        swarmNode->getMaterial(0).DiffuseColor = SColor(150, 150, 200, 255);
         swarmNode->setVisible(false); // Hide until we have a valid hull
     }
 
@@ -590,8 +597,6 @@ int main() {
                 swarmPositions.reserve(enemies.size() + 1);
 
                 // Calculate Dynamic Radius based on swarm count
-                // Max radius of spiral is approx spacing * sqrt(count)
-                // We add a buffer (e.g. 2.5x) to determine what counts as "trailing"
                 float maxExpectedRadius = agentSpacing * std::sqrt((float)NUM_SWARM);
                 float trailThresholdSq = (maxExpectedRadius * 2.5f) * (maxExpectedRadius * 2.5f);
 
@@ -638,6 +643,10 @@ int main() {
                     const video::SColor centerColor(220, 50, 100, 200);
                     const video::SColor edgeColor(200, 80, 150, 255);
 
+                    // UV Scale Factor (Controls how often the texture repeats)
+                    // Smaller number = Larger texture pattern
+                    const float uvScale = 0.5f;
+
                     // A. Clamp Center (Safety against void)
                     vector3df clampedCenter = navmesh->getClosestPointOnNavmesh(softBody.visualCenter);
 
@@ -648,9 +657,14 @@ int main() {
                         softBody.centerVelocity.set(0, 0, 0); // Kill momentum on impact
                     }
 
+                    // Add Center Vertex with World-Space UV Mapping
                     buffer->Vertices.push_back(
-                        video::S3DVertex(clampedCenter.X, meshY, clampedCenter.Z,
-                            0, 1, 0, centerColor, 0.5f, 0.5f)
+                        video::S3DVertex(
+                            clampedCenter.X, meshY, clampedCenter.Z,
+                            0, 1, 0,
+                            centerColor,
+                            clampedCenter.X * uvScale, clampedCenter.Z * uvScale // World Space UVs
+                        )
                     );
 
                     // B. Add Ring Vertices
@@ -675,13 +689,14 @@ int main() {
                             softBody.vertices[i].velocity *= 0.5f;
                         }
 
-                        // UV Mapping for a circular texture
-                        float u = 0.5f + (cosf(angle) * 0.5f);
-                        float v = 0.5f + (sinf(angle) * 0.5f);
-
+                        // Add Ring Vertex with World-Space UV Mapping
                         buffer->Vertices.push_back(
-                            video::S3DVertex(clampedPos.X, meshY, clampedPos.Z,
-                                0, 1, 0, edgeColor, u, v)
+                            video::S3DVertex(
+                                clampedPos.X, meshY, clampedPos.Z,
+                                0, 1, 0,
+                                edgeColor,
+                                clampedPos.X * uvScale, clampedPos.Z * uvScale // World Space UVs
+                            )
                         );
                     }
 
@@ -703,8 +718,6 @@ int main() {
                     }
 
                     // CRITICAL FIX: Pad the bounding box!
-                    // Physics can move vertices outside the box between frames if fast.
-                    // We add a margin of safety so culling doesn't hide the mesh prematurely.
                     vector3df padding(2.0f, 2.0f, 2.0f);
                     bbox.MinEdge -= padding;
                     bbox.MaxEdge += padding;
