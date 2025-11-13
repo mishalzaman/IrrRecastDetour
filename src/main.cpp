@@ -30,7 +30,7 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-const bool RENDER_SWARM = true; // Toggle swarm visibility for debugging
+const bool RENDER_SWARM = false; // Toggle swarm visibility for debugging
 const bool RENDER_PLAYER = false; // Toggle player visibility for debugging
 const bool RENDER_NAVMESH = false; // Toggle navmesh rendering for debugging
 
@@ -39,26 +39,26 @@ float randomFloat(float min, float max) {
     return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
 }
 
-// Calculate surrounding ring formation (360 degrees)
-vector3df calculateSurroundOffset(int index, int totalCount, float baseRadius) {
-    const float PI = 3.14159265359f;
+// Calculate surrounding spiral formation (Golden Spiral / Phyllotaxis)
+// This ensures the blob grows in size naturally as more agents are added.
+vector3df calculateSurroundOffset(int index, float spacing) {
+    // Golden angle in radians (approx 137.5 degrees)
+    const float goldenAngle = 2.39996323f;
 
-    // 1. Distribute agents evenly around a full circle (0 to 2*PI)
-    float angleStep = (2.0f * PI) / (float)totalCount;
-    float angle = index * angleStep;
+    // Radius grows with the square root of the index to maintain constant density
+    // +1.0f ensures the first agent isn't strictly at 0,0 (optional)
+    float r = spacing * std::sqrt((float)index + 1.0f);
+    float theta = index * goldenAngle;
 
-    // 2. Add Randomness (Gish is a blob, not a perfect soldier ring)
-    // Vary the radius slightly so they aren't in a perfect hard line
-    float randomRadius = baseRadius + randomFloat(-0.3f, 0.3f);
+    // Add slight Randomness for organic liquid feel
+    float randomRadius = r + randomFloat(-0.2f, 0.2f);
+    float randomTheta = theta + randomFloat(-0.1f, 0.1f);
 
-    // Vary the angle slightly for organic overlapping
-    float randomAngle = angle + randomFloat(-0.1f, 0.1f);
-
-    // 3. Convert Polar to Cartesian
+    // Convert Polar to Cartesian
     return vector3df(
-        cosf(randomAngle) * randomRadius,
+        cosf(randomTheta) * randomRadius,
         0.0f,
-        sinf(randomAngle) * randomRadius
+        sinf(randomTheta) * randomRadius
     );
 }
 
@@ -156,30 +156,12 @@ public:
     }
 
     void update(float dt, const std::vector<vector3df>& hullPoints, const vector3df& targetCenter, float time) {
-        // 1. CENTER PHYSICS (STABILIZED)
-        vector3df diff = targetCenter - visualCenter;
-        float distSq = diff.getLengthSQ();
+        // 1. CENTER PHYSICS (NO LAG)
 
-        // Spring force
-        vector3df centerForce = diff * 80.0f - centerVelocity * 10.0f;
-        centerVelocity += centerForce * dt;
-
-        // CAP VELOCITY (Prevents "Explosions" / Jumping)
-        // If velocity is too high, the mesh creates a gap between frames
-        float speed = centerVelocity.getLength();
-        const float MAX_SPEED = 25.0f;
-        if (speed > MAX_SPEED) {
-            centerVelocity = centerVelocity * (MAX_SPEED / speed);
-        }
-
-        visualCenter += centerVelocity * dt;
-
-        // Emergency Teleport only if WAY off (e.g. map change or massive lag spike)
-        // Increased from 2.0f to 100.0f (10 units)
-        if (distSq > 100.0f) {
-            visualCenter = targetCenter;
-            centerVelocity.set(0, 0, 0);
-        }
+        // Directly set the visual center to the target center.
+        // This ensures the mesh hull does not lag behind the swarm movement.
+        visualCenter = targetCenter;
+        centerVelocity.set(0, 0, 0);
 
         // 2. CALCULATE TARGET SHAPE
         float angleStep = (2.0f * 3.14159f) / SEGMENTS;
@@ -402,11 +384,14 @@ int main() {
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
+    // Try increasing this number! The blob size will now grow automatically.
     const int NUM_SWARM = 32;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
-    std::vector<vector3df> agentOffsets; // Store random offsets per agent
-    const float formationRadius = 1.5f; // Base distance from player
+    std::vector<vector3df> agentOffsets;
+
+    // Spacing controls the density of the swarm.
+    const float agentSpacing = 0.6f;
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
@@ -423,10 +408,9 @@ int main() {
         DT_CROWD_OPTIMIZE_TOPO |
         DT_CROWD_SEPARATION;
 
-    // Pre-calculate random offsets for each agent
+    // Pre-calculate spiral offsets for each agent
     for (int i = 0; i < NUM_SWARM; i++) {
-        // REMOVED: vector3df(0, 0, 1) argument (direction doesn't matter for a circle)
-        vector3df offset = calculateSurroundOffset(i, NUM_SWARM, formationRadius);
+        vector3df offset = calculateSurroundOffset(i, agentSpacing);
         agentOffsets.push_back(offset);
     }
 
@@ -438,7 +422,7 @@ int main() {
             enemy->setMaterialFlag(EMF_LIGHTING, false);
             enemy->setVisible(RENDER_SWARM);
 
-            u8 colorVar = (u8)(200 + (i * 5));
+            u8 colorVar = (u8)(200 + (i * 2));
             enemy->getMaterial(0).DiffuseColor = SColor(255, colorVar, 0, 0);
 
             int agentId = navmesh->addAgent(enemy, followerParams);
@@ -598,23 +582,44 @@ int main() {
             // =================================================================
             if (swarmNode && sphere && enemies.size() >= 3) {
 
-                // 1. Calculate Centroid
+                // 1. Filter & Calculate Centroid
+                vector3df playerPos = sphere->getPosition();
                 vector3df actualCenter(0, 0, 0);
                 std::vector<vector3df> swarmPositions;
+                // Reserve enough space
                 swarmPositions.reserve(enemies.size() + 1);
 
+                // Calculate Dynamic Radius based on swarm count
+                // Max radius of spiral is approx spacing * sqrt(count)
+                // We add a buffer (e.g. 2.5x) to determine what counts as "trailing"
+                float maxExpectedRadius = agentSpacing * std::sqrt((float)NUM_SWARM);
+                float trailThresholdSq = (maxExpectedRadius * 2.5f) * (maxExpectedRadius * 2.5f);
+
+                int validCount = 0;
                 for (IMeshSceneNode* enemy : enemies) {
                     vector3df pos = enemy->getPosition();
-                    swarmPositions.push_back(pos);
-                    actualCenter += pos;
+
+                    // Include agent only if within valid distance from player
+                    if (pos.getDistanceFromSQ(playerPos) <= trailThresholdSq) {
+                        swarmPositions.push_back(pos);
+                        actualCenter += pos;
+                        validCount++;
+                    }
                 }
-                swarmPositions.push_back(sphere->getPosition());
-                actualCenter += sphere->getPosition();
-                actualCenter /= (float)swarmPositions.size();
+
+                // Always include player in the hull
+                swarmPositions.push_back(playerPos);
+                actualCenter += playerPos;
+                validCount++;
+
+                // Average
+                if (validCount > 0)
+                    actualCenter /= (float)validCount;
 
                 // 2. Calculate Rigid Convex Hull
                 std::vector<vector3df> rigidHull = calculateConvexHull(swarmPositions);
 
+                // Only render if we have enough points to form a valid shape
                 if (rigidHull.size() >= 3) {
                     swarmNode->setVisible(true);
 
@@ -713,6 +718,10 @@ int main() {
 
                     // Update the SceneNode's box too
                     swarmNode->getMesh()->setBoundingBox(bbox);
+                }
+                else {
+                    // Hide if hull is invalid (too few agents nearby)
+                    swarmNode->setVisible(false);
                 }
             }
 
