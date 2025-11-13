@@ -3,6 +3,7 @@ Game Engine Main Loop - Wonderful 101 Style Movement
 - Direct player control (no navmesh agent for player)
 - Swarm follows in trailing formation
 - Player constrained to navmesh via manual clamping
+- DYNAMIC MESH attached to swarm hull
 */
 #ifdef _WIN32
 #include <windows.h>
@@ -13,6 +14,7 @@ Game Engine Main Loop - Wonderful 101 Style Movement
 #include <vector>
 #include <cmath>
 #include <ctime>
+#include <algorithm> // For std::sort (Convex Hull)
 #include "Config.h"
 #include "NavMesh.h"
 #include "InputEventReceiver.h"
@@ -71,6 +73,52 @@ vector3df calculateClusterFormationOffset(int index, int totalCount, float baseR
         sinf(followerAngle) * radius + offsetZ
     );
 }
+
+// 2D Cross product (on XZ plane)
+// > 0 for counter-clockwise turn
+// < 0 for clockwise turn
+// = 0 for collinear
+float cross_product_xz(const vector3df& o, const vector3df& a, const vector3df& b) {
+    return (a.X - o.X) * (b.Z - o.Z) - (a.Z - o.Z) * (b.X - o.X);
+}
+
+// Calculate 2D convex hull (Monotone Chain algorithm)
+std::vector<vector3df> calculateConvexHull(std::vector<vector3df>& points) {
+    int n = points.size();
+    if (n < 3) return {}; // Need at least 3 points for a hull
+
+    // Sort points lexicographically (by X, then Z)
+    std::sort(points.begin(), points.end(), [](const vector3df& a, const vector3df& b) {
+        return a.X < b.X || (a.X == b.X && a.Z < b.Z);
+        });
+
+    std::vector<vector3df> hull;
+
+    // Build lower hull
+    for (int i = 0; i < n; ++i) {
+        // Pop points that make a clockwise turn
+        while (hull.size() >= 2 && cross_product_xz(hull[hull.size() - 2], hull.back(), points[i]) <= 0) {
+            hull.pop_back();
+        }
+        hull.push_back(points[i]);
+    }
+
+    // Build upper hull
+    int lowerHullSize = hull.size();
+    for (int i = n - 2; i >= 0; --i) {
+        // Pop points that make a clockwise turn
+        while (hull.size() > lowerHullSize && cross_product_xz(hull[hull.size() - 2], hull.back(), points[i]) <= 0) {
+            hull.pop_back();
+        }
+        hull.push_back(points[i]);
+    }
+
+    // Remove last point (it's the same as the first)
+    hull.pop_back();
+
+    return hull;
+}
+
 
 int main() {
     // Seed random number generator for formation variation
@@ -215,7 +263,7 @@ int main() {
     /* ===============================
     SWARM SETUP (Formation Followers)
     ================================ */
-    const int NUM_SWARM = 128;
+    const int NUM_SWARM = 16;
     std::vector<IMeshSceneNode*> enemies;
     std::vector<int> enemyAgentIds;
     std::vector<vector3df> agentOffsets; // Store random offsets per agent
@@ -223,7 +271,7 @@ int main() {
 
     dtCrowdAgentParams followerParams;
     memset(&followerParams, 0, sizeof(followerParams));
-    followerParams.maxAcceleration = 95.0f;
+    followerParams.maxAcceleration = 60.0f;
     followerParams.maxSpeed = 12.0f; // Slightly faster than player to catch up
 
     // Enable separation between followers
@@ -248,6 +296,7 @@ int main() {
             // Use pre-calculated offset
             enemy->setPosition(vector3df(0, 1, 0) + agentOffsets[i]);
             enemy->setMaterialFlag(EMF_LIGHTING, false);
+            //enemy->setVisible(false);
 
             u8 colorVar = (u8)(200 + (i * 5));
             enemy->getMaterial(0).DiffuseColor = SColor(255, colorVar, 0, 0);
@@ -258,6 +307,33 @@ int main() {
                 enemyAgentIds.push_back(agentId);
             }
         }
+    }
+
+    /* ===============================
+     SWARM HULL MESH SETUP
+    ================================ */
+    scene::SMesh* swarmMesh = new scene::SMesh();
+    // Use CDynamicMeshBuffer for efficient per-frame updates
+    // Note: In 1.8.5, CDynamicMeshBuffer is just a typedef for SMeshBuffer
+    // but we still need to get the buffer from the mesh.
+    scene::IMeshBuffer* swarmBuffer = new scene::SMeshBuffer();
+    swarmMesh->addMeshBuffer(swarmBuffer);
+    swarmBuffer->drop(); // Mesh now owns the buffer
+
+    scene::IMeshSceneNode* swarmNode = smgr->addMeshSceneNode(swarmMesh);
+    swarmMesh->drop(); // Node now owns the mesh
+
+    if (swarmNode) {
+        swarmNode->setMaterialFlag(EMF_LIGHTING, false);
+        swarmNode->setMaterialFlag(EMF_BACK_FACE_CULLING, false); // See both sides
+
+        // Use EMF_WIREFRAME for debugging the hull shape
+        // swarmNode->setMaterialFlag(EMF_WIREFRAME, true); 
+
+        // Set to a semi-transparent material
+        swarmNode->getMaterial(0).DiffuseColor = SColor(150, 150, 200, 255); // Semi-transparent blue/white
+        swarmNode->setMaterialType(EMT_TRANSPARENT_ALPHA_CHANNEL);
+        swarmNode->setVisible(false); // Hide until we have a valid hull
     }
 
     /* ===============================
@@ -386,6 +462,164 @@ int main() {
 
             // Update navmesh agents (swarm only)
             navmesh->update(deltaTime);
+
+            // =================================================================
+            // UPDATE SWARM HULL MESH (with NavMesh Boundary Clipping)
+            // =================================================================
+            if (swarmNode && sphere && enemies.size() >= 3) {
+                // 1. Collect all swarm agent positions (they're already clamped to navmesh)
+                std::vector<vector3df> swarmPositions;
+                swarmPositions.reserve(enemies.size() + 1);
+
+                for (IMeshSceneNode* enemy : enemies) {
+                    swarmPositions.push_back(enemy->getPosition());
+                }
+
+                // Add player position
+                swarmPositions.push_back(sphere->getPosition());
+
+                // 2. Calculate the 2D convex hull from swarm positions
+                std::vector<vector3df> hull = calculateConvexHull(swarmPositions);
+
+                if (hull.size() < 3) {
+                    swarmNode->setVisible(false);
+                }
+                else {
+                    // 3. Clamp all hull vertices to navmesh and validate
+                    std::vector<vector3df> clampedHull;
+                    clampedHull.reserve(hull.size() * 2); // Reserve extra space for edge insertions
+
+                    for (size_t i = 0; i < hull.size(); ++i) {
+                        vector3df currentPoint = hull[i];
+                        vector3df nextPoint = hull[(i + 1) % hull.size()];
+
+                        // Clamp current point to navmesh
+                        vector3df clampedCurrent = navmesh->getClosestPointOnNavmesh(currentPoint);
+
+                        // Check if current point moved significantly (it was off navmesh)
+                        float currentDistSq = (clampedCurrent - currentPoint).getLengthSQ();
+                        bool currentWasOffMesh = currentDistSq > 0.01f;
+
+                        // Add the clamped current point
+                        clampedHull.push_back(clampedCurrent);
+
+                        // Check edge between current and next point
+                        // Sample points along the edge to detect if it crosses navmesh boundary
+                        const int edgeSamples = 8;
+                        vector3df lastValidPoint = clampedCurrent;
+
+                        for (int j = 1; j < edgeSamples; ++j) {
+                            float t = (float)j / (float)edgeSamples;
+                            vector3df edgePoint = currentPoint.getInterpolated(nextPoint, t);
+                            vector3df clampedEdge = navmesh->getClosestPointOnNavmesh(edgePoint);
+
+                            float edgeDistSq = (clampedEdge - edgePoint).getLengthSQ();
+
+                            // If this edge point is off navmesh, insert the boundary point
+                            if (edgeDistSq > 0.01f) {
+                                // Only add if it's different enough from last point
+                                float diffSq = (clampedEdge - lastValidPoint).getLengthSQ();
+                                if (diffSq > 0.04f) { // Minimum spacing between points
+                                    clampedHull.push_back(clampedEdge);
+                                    lastValidPoint = clampedEdge;
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Remove duplicate points (points that are too close together)
+                    std::vector<vector3df> finalHull;
+                    finalHull.reserve(clampedHull.size());
+
+                    for (size_t i = 0; i < clampedHull.size(); ++i) {
+                        bool isDuplicate = false;
+                        for (size_t j = 0; j < finalHull.size(); ++j) {
+                            float distSq = (clampedHull[i] - finalHull[j]).getLengthSQ();
+                            if (distSq < 0.01f) { // Too close, consider duplicate
+                                isDuplicate = true;
+                                break;
+                            }
+                        }
+                        if (!isDuplicate) {
+                            finalHull.push_back(clampedHull[i]);
+                        }
+                    }
+
+                    // 5. Recalculate convex hull from clamped points (they may no longer be convex)
+                    if (finalHull.size() >= 3) {
+                        hull = calculateConvexHull(finalHull);
+                    }
+                    else {
+                        hull = finalHull;
+                    }
+
+                    if (hull.size() < 3) {
+                        swarmNode->setVisible(false);
+                    }
+                    else {
+                        swarmNode->setVisible(true);
+
+                        // 6. Get the mesh buffer
+                        scene::SMeshBuffer* buffer = (scene::SMeshBuffer*)swarmNode->getMesh()->getMeshBuffer(0);
+
+                        // 7. Clear buffers
+                        buffer->Vertices.clear();
+                        buffer->Indices.clear();
+
+                        // 8. Calculate swarm center (use actual agent positions, not hull)
+                        vector3df swarmCenter(0, 0, 0);
+                        for (IMeshSceneNode* enemy : enemies) {
+                            swarmCenter += enemy->getPosition();
+                        }
+                        swarmCenter += sphere->getPosition();
+                        swarmCenter /= (float)(enemies.size() + 1);
+
+                        // 9. Triangulate the hull (fan from swarm center)
+                        const video::SColor vColor(255, 150, 200, 255);
+                        const float meshY = 0.1f;
+
+                        // Add center vertex
+                        buffer->Vertices.push_back(
+                            video::S3DVertex(swarmCenter.X, meshY, swarmCenter.Z,
+                                0, 1, 0, vColor, 0.5f, 0.5f)
+                        );
+                        u16 centerIndex = 0;
+
+                        // Add all hull vertices
+                        for (const auto& v : hull) {
+                            buffer->Vertices.push_back(
+                                video::S3DVertex(v.X, meshY, v.Z,
+                                    0, 1, 0, vColor, 0.0f, 0.0f)
+                            );
+                        }
+
+                        // 10. Create indices for the triangle fan
+                        u16 hullVertexCount = (u16)hull.size();
+                        for (u16 i = 0; i < hullVertexCount; ++i) {
+                            u16 v1_idx = 1 + i;
+                            u16 v2_idx = 1 + ((i + 1) % hullVertexCount);
+
+                            buffer->Indices.push_back(centerIndex);
+                            buffer->Indices.push_back(v1_idx);
+                            buffer->Indices.push_back(v2_idx);
+                        }
+
+                        // 11. Set bounding box
+                        core::aabbox3df bbox;
+                        bbox.reset(swarmCenter);
+                        for (const auto& v : hull) {
+                            bbox.addInternalPoint(v);
+                        }
+                        bbox.MinEdge.Y = meshY - 0.5f;
+                        bbox.MaxEdge.Y = meshY + 0.5f;
+                        buffer->BoundingBox = bbox;
+
+                        // 12. Update mesh
+                        buffer->setDirty();
+                        swarmNode->getMesh()->setBoundingBox(bbox);
+                    }
+                }
+            }
 
             // =================================================================
             // CAMERA FOLLOW
