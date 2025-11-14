@@ -394,10 +394,11 @@ ISceneNode* StaticNavMesh::renderNavMesh()
         _naviDebugData->setMaterialFlag(irr::video::EMF_LIGHTING, false);
         _naviDebugData->setMaterialFlag(irr::video::EMF_WIREFRAME, true);
         _naviDebugData->setPosition(irr::core::vector3df(0, 0.1f, 0));
-        _naviDebugData->setVisible(true); // Explicitly set visible
 
         printf("Debug mesh created with %d vertices\n", smesh->getMeshBuffer(0)->getVertexCount());
     }
+
+    this->setVisible(true);
 
     smesh->drop();
     return _naviDebugData;
