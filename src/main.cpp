@@ -30,9 +30,9 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-const bool RENDER_SWARM = false; // Toggle swarm visibility for debugging
-const bool RENDER_PLAYER = false; // Toggle player visibility for debugging
-const bool RENDER_NAVMESH = false; // Toggle navmesh rendering for debugging
+const bool RENDER_SWARM = true; // Toggle swarm visibility for debugging
+const bool RENDER_PLAYER = true; // Toggle player visibility for debugging
+const bool RENDER_NAVMESH = true; // Toggle navmesh rendering for debugging
 
 // Random number generator
 float randomFloat(float min, float max) {
