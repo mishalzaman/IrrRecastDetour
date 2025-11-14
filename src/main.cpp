@@ -16,7 +16,7 @@ Game Engine Main Loop - Wonderful 101 Style Movement
 #include <ctime>
 #include <algorithm> // For std::sort (Convex Hull)
 #include "Config.h"
-#include "NavMesh.h"
+#include "StaticNavMesh.h"
 #include "InputEventReceiver.h"
 
 using namespace irr;
@@ -30,9 +30,9 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-const bool RENDER_SWARM = false; // Toggle swarm visibility for debugging
-const bool RENDER_PLAYER = false; // Toggle player visibility for debugging
-const bool RENDER_NAVMESH = false; // Toggle navmesh rendering for debugging
+const bool RENDER_SWARM = true; // Toggle swarm visibility for debugging
+const bool RENDER_PLAYER = true; // Toggle player visibility for debugging
+const bool RENDER_NAVMESH = true; // Toggle navmesh rendering for debugging
 
 // Random number generator
 float randomFloat(float min, float max) {
@@ -348,7 +348,7 @@ int main() {
     /* ===============================
     PATHFINDING SETUP
     ================================ */
-    NavMesh* navmesh = new NavMesh(smgr->getRootSceneNode(), smgr, -1);
+    StaticNavMesh* navmesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr, -1);
     NavMeshParams params;
 
     if (!navmesh->build(levelNode, params)) {
