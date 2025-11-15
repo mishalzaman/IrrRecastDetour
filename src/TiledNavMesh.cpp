@@ -1,4 +1,4 @@
-#include "TiledNavMesh.h"
+#include "IrrRecastDetour/TiledNavMesh.h"
 #include <irrlicht.h>
 
 // Use explicit namespaces

@@ -1,10 +1,12 @@
 #include <irrlicht.h>
 #include <iostream>
 #include <vector>
+#include <IrrRecastDetour/StaticNavMesh.h>
 
-#include "StaticNavMesh.h"       // Our navmesh class
-#include "InputEventReceiver.h"  // Our input handler
-#include "Config.h"              // Window config
+#include "../common/InputEventReceiver.h"
+#include "../common/Config.h"
+
+
 
 // Namespaces
 using namespace irr;
