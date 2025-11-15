@@ -1,4 +1,4 @@
-#include "StaticNavMesh.h"
+#include "IrrRecastDetour/StaticNavMesh.h"
 #include <irrlicht.h> // For Irrlicht types
 
 // Use explicit namespaces
