@@ -18,6 +18,16 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
+const u32 windowWidth = Config::WINDOW_WIDTH;
+const u32 windowHeight = Config::WINDOW_HEIGHT;
+
+enum
+{
+    ID_IsNotPickable = 0,
+    IDFlag_IsPickable = 1 << 0,
+    IDFlag_IsHighlightable = 1 << 1
+};
+
 /**
  * @brief Finds the 3D world position of a mouse click on the level geometry.
  * @param smgr Irrlicht Scene Manager.
@@ -36,15 +46,29 @@ bool getMouseWorldPosition(ISceneManager* smgr, ICameraSceneNode* camera, positi
         ray,
         intersection,
         hitTriangle,
-        0); // ID 0 to check all nodes
+        IDFlag_IsPickable,
+        0);
 
-    // We only care about clicks on the map geometry
-    return (hitNode == mapNode);
+    // NEW CHECK: See if the hitNode or any of its parents is the mapNode
+    const ISceneNode* node = hitNode;
+    while (node)
+    {
+        if (node == mapNode)
+        {
+            // Success! The ray hit the map or one of its children.
+            return true;
+        }
+        node = node->getParent(); // Move up to the parent
+    }
+
+    // The ray hit nothing, or it hit something that isn't part of the mapNode hierarchy
+    return false;
 }
 
-
 int main() {
-    // 1. Setup Irrlicht Device
+    /*=========================================================
+    IRRLICHT SETUP
+    =========================================================k*/
     InputEventListener receiver;
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL, // Use OpenGL
@@ -62,7 +86,10 @@ int main() {
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
 
-    // 2. Load Level Geometry
+    /*=========================================================
+    LOAD MAP
+    =========================================================k*/
+    scene::ISceneCollisionManager* levelCollisionManager = nullptr;
     IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_map_2.obj");
     if (!mapMesh) {
         std::cerr << "Failed to load level mesh: assets/test_map_2.obj" << std::endl;
@@ -70,12 +97,38 @@ int main() {
         return 1;
     }
     IMeshSceneNode* mapNode = smgr->addMeshSceneNode(mapMesh->getMesh(0));
-    mapNode->setMaterialFlag(EMF_LIGHTING, false);
-    mapNode->setMaterialFlag(EMF_WIREFRAME, false); // Show map solid
-    mapNode->setPosition(vector3df(0, 0, 0));
 
+    if (mapNode) {
+        mapNode->setMaterialFlag(EMF_LIGHTING, false);
+        mapNode->setMaterialFlag(EMF_WIREFRAME, false); // Show map solid
+        mapNode->setPosition(vector3df(0, 0, 0));
+        mapNode->setID(IDFlag_IsPickable);
+        mapNode->setVisible(true);
 
-    // 3. Build StaticNavMesh
+        scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
+            mapNode->getMesh(), mapNode, 128
+        );
+
+        if (!selector) {
+			std::cerr << "Failed to create triangle selector for level mesh!" << std::endl;
+            device->drop();
+            return 1;
+        }
+
+        if (selector) {
+            mapNode->setTriangleSelector(selector);
+            selector->drop(); // The node now holds a reference, so we can drop ours
+            levelCollisionManager = smgr->getSceneCollisionManager();
+            std::cout << "Triangle selector set successfully." << std::endl; // Debug message
+        }
+        else {
+            std::cerr << "Failed to create triangle selector!" << std::endl; // Debug message
+        }
+    }
+
+    /*=========================================================
+    BUILD NAVMESH
+    =========================================================k*/
     StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
     NavMeshParams params; // Use default params from StaticNavMesh.h
 
@@ -86,12 +139,13 @@ int main() {
     int playerId = -1;
     std::vector<int> followerIds;
     vector3df lastPlayerPos(0, 0, 0);
-    ICameraSceneNode* camera = nullptr; // Define camera here for later use
 
     if (success) {
         std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
 
-        // 4. Render Navmesh Debug Visual
+        /*=========================================================
+        RENDER NAVMESH
+        =========================================================k*/
         ISceneNode* debugNavMeshNode = navMesh->renderNavMesh();
         if (debugNavMeshNode) {
             debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
@@ -99,72 +153,58 @@ int main() {
             debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 0, 255); // Blue
         }
 
-        // 5. Create Player Agent
+        /*=========================================================
+        PLAYER AGENT
+        =========================================================k*/
         playerNode = smgr->addSphereSceneNode(params.AgentRadius);
         playerNode->setMaterialFlag(EMF_LIGHTING, false);
         playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
-        vector3df initialPlayerPos(10, 5, 10);
+        vector3df initialPlayerPos(5, 1, 5);
         playerNode->setPosition(initialPlayerPos);
         playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
-
-        // 6. Create Follower Agents
-        const int NUM_FOLLOWERS = 5;
-        for (int i = 0; i < NUM_FOLLOWERS; ++i) {
-            ISceneNode* followerNode = smgr->addSphereSceneNode(params.AgentRadius * 0.8f);
-            followerNode->setMaterialFlag(EMF_LIGHTING, false);
-            followerNode->getMaterial(0).EmissiveColor.set(255, 0, 255, 0); // Green
-
-            // Spawn near the player
-            vector3df pos = playerNode->getPosition() + vector3df((i - NUM_FOLLOWERS / 2.0f) * 2.0f, 0, 2.0f);
-            followerNode->setPosition(pos);
-
-            int followerId = navMesh->addAgent(followerNode, params.AgentRadius * 0.8f, params.AgentHeight);
-            if (followerId != -1) {
-                followerIds.push_back(followerId);
-            }
-        }
-        std::cout << "Added " << (1 + followerIds.size()) << " agents." << std::endl;
-        lastPlayerPos = playerNode->getPosition();
 
     }
     else {
         std::cerr << "FATAL: Failed to build navmesh!" << std::endl;
-        // Continue without AI to allow scene inspection
     }
 
-    // 7. Add Orthographic Camera
-    // Get map bounding box to calculate a good ortho view size
-    aabbox3d<f32> mapBox = mapNode->getMesh()->getBoundingBox();
-    mapNode->getAbsoluteTransformation().transformBox(mapBox);
-    vector3df mapCenter = mapBox.getCenter();
-    f32 mapWidth = mapBox.getExtent().X;
-    f32 mapHeight = mapBox.getExtent().Z;
+    /*=========================================================
+    CAMERA
+    =========================================================k*/
+    ICameraSceneNode* camera = smgr->addCameraSceneNode(
+        0,
+        vector3df(0, 8, 0),   // Position
+        vector3df(0, 0, 0),   // Look-at target
+        -1,                   // ID
+        true                  // Use orthographic camera
+    );
 
-    // Set view size based on map, with some padding
-    f32 orthoViewSize = core::max_(mapWidth, mapHeight) * 1.2f;
+    // Calculate aspect ratio to fix stretching
+    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
 
-    camera = smgr->addCameraSceneNode(
-        0, // parent
-        vector3df(mapCenter.X, 100.0f, mapCenter.Z), // Initial position high above center
-        mapCenter); // Initial target at center
+    // Define the *vertical* size of the view.
+    // The horizontal size will be calculated from this.
+    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
+    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
 
-    // Calculate ortho matrix
-    matrix4 orthoMatrix;
-    f32 orthoHeight = orthoViewSize * (f32)Config::WINDOW_HEIGHT / (f32)Config::WINDOW_WIDTH;
-    orthoMatrix.buildProjectionMatrixOrthoLH(orthoViewSize, orthoHeight, 1.0f, 1000.0f);
-    camera->setProjectionMatrix(orthoMatrix, true);
+    core::matrix4 orthoMatrix;
+    orthoMatrix.buildProjectionMatrixOrthoLH(
+        orthoViewWidth,         // Calculated Width
+        orthoViewHeight,        // Fixed Height
+        camera->getNearValue(), // Near clip plane
+        camera->getFarValue()   // Far clip plane
+    );
+    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
 
-    // Set up vector for top-down view (Y is up, so Z is "forward" in 2D)
-    camera->setUpVector(vector3df(0, 0, 1));
-
-    // Make cursor visible for clicking
-    device->getCursorControl()->setVisible(true);
-
-    // 8. Add GUI for stats
+    /*=========================================================
+    GUI
+    =========================================================k*/
     IGUIStaticText* stats = guienv->addStaticText(L"", rect<s32>(10, 10, 400, 30));
     stats->setOverrideColor(SColor(255, 255, 255, 255));
 
-    // 9. Main Loop
+    /*=========================================================
+    MAIN LOOP
+    =========================================================k*/
     u32 then = device->getTimer()->getTime();
 
     while (device->run()) {
@@ -173,44 +213,65 @@ int main() {
         float deltaTime = (float)(now - then) / 1000.0f;
         then = now;
 
+        navMesh->update(deltaTime);
+
         // --- Input ---
         if (receiver.IsKeyDown(KEY_ESCAPE))
+        {
             break;
+        }
 
         // Player mouse click
         if (success && receiver.wasMouseClicked()) {
             position2di mousePos = receiver.getMousePos();
-            vector3df intersection;
 
-            // Find where the mouse clicked on the level
-            if (getMouseWorldPosition(smgr, camera, mousePos, mapNode, intersection)) {
-                // Find the closest valid point on the navmesh to the click
-                vector3df targetPos = navMesh->getClosestPointOnNavmesh(intersection);
+            std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
 
-                // Set the player's target
-                navMesh->setAgentTarget(playerId, targetPos);
+            core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
+                mousePos,
+                camera
+            );
+
+            core::vector3df intersectionPoint;
+            core::triangle3df hitTriangle;
+
+            scene::ISceneNode* selectedSceneNode =
+                levelCollisionManager->getSceneNodeAndCollisionPointFromRay(
+                    ray,
+                    intersectionPoint, // This will be the position of the collision
+                    hitTriangle, // This will be the triangle hit in the collision
+                    IDFlag_IsPickable, // This ensures that only nodes that we have
+                    // set up to be pickable are considered
+                    0); // Check the entire scene
+
+            if (selectedSceneNode) {
+                // 5. Check if the node we hit was the levelNode
+                //    (This is technically optional if it's your only pickable node)
+                if (selectedSceneNode == mapNode) {
+                    std::cout << "Mouse clicked mesh at: "
+                        << intersectionPoint.X << ", "
+                        << intersectionPoint.Y << ", "
+                        << intersectionPoint.Z << std::endl;
+
+                    if (playerId != -1) {
+                        navMesh->setAgentTarget(playerId, intersectionPoint);
+                    }
+                }
+            }
+            else {
+                // The ray didn't hit any node *flagged as pickable*
+                std::cout << "Mouse ray missed all pickable nodes." << std::endl;
             }
         }
 
-        // --- AI Update ---
+		// Camera follow player
         if (success && playerNode) {
-            // Update the entire crowd simulation
-            navMesh->update(deltaTime);
-
-            // Get player's current position (updated by the crowd)
             vector3df playerPos = playerNode->getPosition();
 
-            // --- Update Camera to Follow Player ---
-            camera->setPosition(vector3df(playerPos.X, 100.0f, playerPos.Z)); // 100 units above player
-            camera->setTarget(playerPos); // Look at the player
-
-            // Only update follower targets if the player has moved significantly
-            if (playerPos.getDistanceFromSQ(lastPlayerPos) > 1.0f) { // 1 unit threshold
-                for (int followerId : followerIds) {
-                    navMesh->setAgentTarget(followerId, playerPos);
-                }
-                lastPlayerPos = playerPos;
-            }
+            // For an orthographic top-down camera, just move the camera position
+            // to center on the player's X and Z coordinates
+            camera->setPosition(vector3df(playerPos.X, 8.0f, playerPos.Z));
+            camera->setTarget(vector3df(playerPos.X, 0.0f, playerPos.Z));
         }
 
         // --- Render ---
