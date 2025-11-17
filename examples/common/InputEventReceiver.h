@@ -17,10 +17,17 @@ private:
     position2di mousePos;
     bool KeyIsDown[KEY_KEY_CODES_COUNT];
 
+    // --- NEW MEMBERS FOR CAMERA CONTROL ---
+    bool bIsRightMouseDown;
+    position2di MouseDragPos;
+    position2di LastMouseDragPos;
+
+
 public:
     InputEventListener() :
         guienv(0), // Initialize the GUI pointer to null
-        mouseClicked(false)
+        mouseClicked(false),
+        bIsRightMouseDown(false) // Initialize new member
     {
         for (u32 i = 0; i < KEY_KEY_CODES_COUNT; ++i)
             KeyIsDown[i] = false;
@@ -50,15 +57,38 @@ public:
         //  STEP 2: If GUI didn't want it, process it for game logic
         // ================================================================
 
-        // --- Handle Mouse Clicks for the Game ---
+        // --- Handle Mouse Events for the Game ---
         if (event.EventType == EET_MOUSE_INPUT_EVENT) {
-            if (event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN) {
-                // The GUI didn't handle this click, so it's a "game world" click.
-                mouseClicked = true;
-                mousePos = position2di(event.MouseInput.X, event.MouseInput.Y);
 
-                // We handled this event.
+            // Update drag position on any mouse event
+            MouseDragPos = position2di(event.MouseInput.X, event.MouseInput.Y);
+
+            switch (event.MouseInput.Event) {
+                // Left click for player movement
+            case EMIE_LMOUSE_PRESSED_DOWN:
+                mouseClicked = true;
+                mousePos = MouseDragPos;
                 return true;
+
+                // Right click for camera rotation
+            case EMIE_RMOUSE_PRESSED_DOWN:
+                bIsRightMouseDown = true;
+                LastMouseDragPos = MouseDragPos; // Start drag
+                return true;
+
+            case EMIE_RMOUSE_LEFT_UP:
+                bIsRightMouseDown = false;
+                return true;
+
+            case EMIE_MOUSE_MOVED:
+                if (bIsRightMouseDown) {
+                    // We are dragging, consume the event
+                    return true;
+                }
+                break; // Otherwise, let it fall through
+
+            default:
+                break; // Other mouse events
             }
         }
 
@@ -88,5 +118,27 @@ public:
 
     virtual bool IsKeyDown(EKEY_CODE keyCode) const {
         return KeyIsDown[keyCode];
+    }
+
+    // --- NEW HELPER FUNCTIONS FOR CAMERA ---
+
+    /**
+     * @brief Is the right mouse button currently held down?
+     */
+    bool IsRightMouseDown() const {
+        return bIsRightMouseDown;
+    }
+
+    /**
+     * @brief Get the mouse drag delta since the last call and reset it.
+     */
+    position2di getMouseDragDelta() {
+        if (!bIsRightMouseDown) {
+            return position2di(0, 0);
+        }
+
+        position2di delta = MouseDragPos - LastMouseDragPos;
+        LastMouseDragPos = MouseDragPos; // Update last position
+        return delta;
     }
 };
