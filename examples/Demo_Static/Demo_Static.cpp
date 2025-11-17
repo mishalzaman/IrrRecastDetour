@@ -176,7 +176,7 @@ int main() {
     // Camera parameters
     float cameraDistance = 15.0f;      // Distance from player
     float cameraAngleH = 0.0f;         // Horizontal angle (yaw) in degrees
-    float cameraAngleV = 89.0f;        // Vertical angle (pitch) in degrees - 90 is directly overhead
+    float cameraAngleV = 45.0f;        // Vertical angle (pitch) in degrees - 90 is directly overhead
     const float cameraRotationSpeed = 0.3f; // Sensitivity for mouse drag
 
     // Create perspective camera
