@@ -432,7 +432,7 @@ ISceneNode* TiledNavMesh::renderNavMesh()
             tileNode->setName(name);
             tileNode->setMaterialFlag(irr::video::EMF_LIGHTING, false);
             tileNode->setMaterialFlag(irr::video::EMF_WIREFRAME, true);
-            tileNode->setPosition(irr::core::vector3df(0, 0.1f, 0));
+            tileNode->setPosition(irr::core::vector3df(0, 0, 0));
             tileNode->setVisible(true);
         }
 
