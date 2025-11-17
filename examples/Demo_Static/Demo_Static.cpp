@@ -133,6 +133,7 @@ int main() {
     =========================================================k*/
     StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
     NavMeshParams params; // Use default params from StaticNavMesh.h
+    params.AgentHeight = params.AgentRadius * 2;
 
     std::cout << "Building navmesh..." << std::endl;
     bool success = navMesh->build(mapNode, params);
