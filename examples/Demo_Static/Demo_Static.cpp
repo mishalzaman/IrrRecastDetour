@@ -85,7 +85,7 @@ int main() {
     ISceneManager* smgr = device->getSceneManager();
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
-	receiver.setGUIEnvironment(guienv);
+    receiver.setGUIEnvironment(guienv);
 
 
     /*=========================================================
@@ -112,7 +112,7 @@ int main() {
         );
 
         if (!selector) {
-			std::cerr << "Failed to create triangle selector for level mesh!" << std::endl;
+            std::cerr << "Failed to create triangle selector for level mesh!" << std::endl;
             device->drop();
             return 1;
         }
@@ -171,32 +171,27 @@ int main() {
     }
 
     /*=========================================================
-    CAMERA
+    CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
     =========================================================k*/
-    ICameraSceneNode* camera = smgr->addCameraSceneNode(
-        0,
-        vector3df(0, 8, 0),   // Position
-        vector3df(0, 0, 0),   // Look-at target
-        -1,                   // ID
-        true                  // Use orthographic camera
-    );
+    // Camera parameters
+    float cameraDistance = 15.0f;      // Distance from player
+    float cameraAngleH = 0.0f;         // Horizontal angle (yaw) in degrees
+    float cameraAngleV = 89.0f;        // Vertical angle (pitch) in degrees - 90 is directly overhead
+    const float cameraRotationSpeed = 0.3f; // Sensitivity for mouse drag
 
-    // Calculate aspect ratio to fix stretching
+    // Create perspective camera
+    ICameraSceneNode* camera = smgr->addCameraSceneNode();
+
+    // Set up perspective projection
     const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
+    camera->setAspectRatio(aspectRatio);
+    camera->setFOV(core::degToRad(60.0f));  // 60 degree field of view
+    camera->setNearValue(0.1f);
+    camera->setFarValue(1000.0f);
 
-    // Define the *vertical* size of the view.
-    // The horizontal size will be calculated from this.
-    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
-    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
-
-    core::matrix4 orthoMatrix;
-    orthoMatrix.buildProjectionMatrixOrthoLH(
-        orthoViewWidth,         // Calculated Width
-        orthoViewHeight,        // Fixed Height
-        camera->getNearValue(), // Near clip plane
-        camera->getFarValue()   // Far clip plane
-    );
-    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
+    // Set initial camera position (overhead view)
+    camera->setPosition(vector3df(0, 15, 0));
+    camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
     GUI
@@ -217,13 +212,32 @@ int main() {
 
         navMesh->update(deltaTime);
 
-        // --- Input ---
+        /*--------------------------------------------------------
+        ESC KEY (EXIT)
+        --------------------------------------------------------*/
         if (receiver.IsKeyDown(KEY_ESCAPE))
         {
             break;
         }
 
-        // Player mouse click
+        /*--------------------------------------------------------
+		RIGHT-CLICK CAMERA ROTATION
+        --------------------------------------------------------*/
+        if (receiver.IsRightMouseDown()) {
+            position2di dragDelta = receiver.getMouseDragDelta();
+
+            // Update camera angles based on mouse drag
+            cameraAngleH -= dragDelta.X * cameraRotationSpeed;
+            cameraAngleV -= dragDelta.Y * cameraRotationSpeed;
+
+            // Clamp vertical angle to prevent flipping
+            if (cameraAngleV < 5.0f) cameraAngleV = 5.0f;
+            if (cameraAngleV > 89.0f) cameraAngleV = 89.0f;
+        }
+
+        /*--------------------------------------------------------
+		LEFT-CLICK MOVE PLAYER
+        --------------------------------------------------------*/
         if (success && receiver.wasMouseClicked()) {
             position2di mousePos = receiver.getMousePos();
 
@@ -266,14 +280,23 @@ int main() {
             }
         }
 
-		// Camera follow player
+        /*--------------------------------------------------------
+        CAMERA FOLLOW PLAYER
+        --------------------------------------------------------*/
         if (success && playerNode) {
             vector3df playerPos = playerNode->getPosition();
 
-            // For an orthographic top-down camera, just move the camera position
-            // to center on the player's X and Z coordinates
-            camera->setPosition(vector3df(playerPos.X, 8.0f, playerPos.Z));
-            camera->setTarget(vector3df(playerPos.X, 0.0f, playerPos.Z));
+            // Calculate camera position using spherical coordinates
+            float angleHRad = core::degToRad(cameraAngleH);
+            float angleVRad = core::degToRad(cameraAngleV);
+
+            // Spherical to Cartesian conversion
+            float x = playerPos.X + cameraDistance * sin(angleVRad) * cos(angleHRad);
+            float y = playerPos.Y + cameraDistance * cos(angleVRad);
+            float z = playerPos.Z + cameraDistance * sin(angleVRad) * sin(angleHRad);
+
+            camera->setPosition(vector3df(x, y, z));
+            camera->setTarget(playerPos);
         }
 
         // --- Render ---
