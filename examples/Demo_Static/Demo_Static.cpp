@@ -28,14 +28,153 @@ enum
     IDFlag_IsHighlightable = 1 << 1
 };
 
+// Vertex Shader (Unreal Engine style)
+const char* vertexShaderCode = R"(
+#version 330 core
+
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec2 inTexCoord;
+
+uniform mat4 mWorldViewProj;
+uniform mat4 mWorld;
+uniform vec3 mLightPos;
+uniform vec3 mCameraPos;
+
+out vec3 fragPos;
+out vec3 fragNormal;
+out vec2 fragTexCoord;
+out vec3 viewDir;
+out vec3 lightDir;
+
+void main()
+{
+    vec4 worldPos = mWorld * vec4(inPosition, 1.0);
+    fragPos = worldPos.xyz;
+    fragNormal = normalize(mat3(mWorld) * inNormal);
+    fragTexCoord = inTexCoord;
+    
+    viewDir = normalize(mCameraPos - fragPos);
+    lightDir = normalize(mLightPos - fragPos);
+    
+    gl_Position = mWorldViewProj * vec4(inPosition, 1.0);
+}
+)";
+
+// Fragment Shader (Unreal Engine PBR-style)
+const char* fragmentShaderCode = R"(
+#version 330 core
+
+in vec3 fragPos;
+in vec3 fragNormal;
+in vec2 fragTexCoord;
+in vec3 viewDir;
+in vec3 lightDir;
+
+uniform vec3 mLightColor;
+uniform vec3 mAmbientColor;
+uniform vec4 mBaseColor;
+uniform float mMetallic;
+uniform float mRoughness;
+uniform float mAmbientOcclusion;
+
+out vec4 FragColor;
+
+const float PI = 3.14159265359;
+
+// Fresnel-Schlick approximation
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// GGX/Trowbridge-Reitz normal distribution
+float distributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    
+    float num = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+    
+    return num / denom;
+}
+
+// Smith's method with GGX
+float geometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    
+    float num = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+    
+    return num / denom;
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = geometrySchlickGGX(NdotV, roughness);
+    float ggx1 = geometrySchlickGGX(NdotL, roughness);
+    
+    return ggx1 * ggx2;
+}
+
+void main()
+{
+    vec3 N = normalize(fragNormal);
+    vec3 V = normalize(viewDir);
+    vec3 L = normalize(lightDir);
+    vec3 H = normalize(V + L);
+    
+    // Base reflectivity (F0)
+    vec3 F0 = vec3(0.04);
+    F0 = mix(F0, mBaseColor.rgb, mMetallic);
+    
+    // Calculate radiance
+    float distance = length(lightDir);
+    float attenuation = 1.0 / (distance * distance * 0.01 + 1.0);
+    vec3 radiance = mLightColor * attenuation;
+    
+    // Cook-Torrance BRDF
+    float NDF = distributionGGX(N, H, mRoughness);
+    float G = geometrySmith(N, V, L, mRoughness);
+    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+    
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - mMetallic;
+    
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+    vec3 specular = numerator / denominator;
+    
+    // Add to outgoing radiance
+    float NdotL = max(dot(N, L), 0.0);
+    vec3 Lo = (kD * mBaseColor.rgb / PI + specular) * radiance * NdotL;
+    
+    // Ambient lighting with AO
+    vec3 ambient = mAmbientColor * mBaseColor.rgb * mAmbientOcclusion;
+    
+    vec3 color = ambient + Lo;
+    
+    // HDR tonemapping (Unreal uses ACES, this is Reinhard for simplicity)
+    color = color / (color + vec3(1.0));
+    
+    // Gamma correction
+    color = pow(color, vec3(1.0/2.2));
+    
+    FragColor = vec4(color, mBaseColor.a);
+}
+)";
+
 /**
  * @brief Finds the 3D world position of a mouse click on the level geometry.
- * @param smgr Irrlicht Scene Manager.
- * @param camera The active camera.
- * @param mousePos The 2D mouse position from the event receiver.
- * @param mapNode The scene node of the level geometry to test against.
- * @param[out] intersection The 3D point of collision.
- * @return true if the ray hit the mapNode, false otherwise.
  */
 bool getMouseWorldPosition(ISceneManager* smgr, ICameraSceneNode* camera, position2di mousePos, ISceneNode* mapNode, vector3df& intersection)
 {
@@ -49,29 +188,26 @@ bool getMouseWorldPosition(ISceneManager* smgr, ICameraSceneNode* camera, positi
         IDFlag_IsPickable,
         0);
 
-    // NEW CHECK: See if the hitNode or any of its parents is the mapNode
     const ISceneNode* node = hitNode;
     while (node)
     {
         if (node == mapNode)
         {
-            // Success! The ray hit the map or one of its children.
             return true;
         }
-        node = node->getParent(); // Move up to the parent
+        node = node->getParent();
     }
 
-    // The ray hit nothing, or it hit something that isn't part of the mapNode hierarchy
     return false;
 }
 
 int main() {
     /*=========================================================
     IRRLICHT SETUP
-    =========================================================k*/
+    =========================================================*/
     InputEventListener receiver;
     IrrlichtDevice* device = createDevice(
-        video::EDT_OPENGL, // Use OpenGL
+        video::EDT_OPENGL,
         dimension2d<u32>(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT),
         32, false, false, false, &receiver);
 
@@ -79,7 +215,7 @@ int main() {
         std::cerr << "Failed to create Irrlicht device!" << std::endl;
         return 1;
     }
-    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Top Down View");
+    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Unreal-Style Lighting");
 
     IVideoDriver* driver = device->getVideoDriver();
     ISceneManager* smgr = device->getSceneManager();
@@ -87,52 +223,103 @@ int main() {
 
     receiver.setGUIEnvironment(guienv);
 
+    /*=========================================================
+    CUSTOM SHADER SETUP
+    =========================================================*/
+    s32 materialType = 0;
+
+    if (driver->queryFeature(EVDF_PIXEL_SHADER_3_0) && driver->queryFeature(EVDF_VERTEX_SHADER_3_0))
+    {
+        IGPUProgrammingServices* gpu = driver->getGPUProgrammingServices();
+
+        if (gpu)
+        {
+            materialType = gpu->addHighLevelShaderMaterial(
+                vertexShaderCode, "main", EVST_VS_3_0,
+                fragmentShaderCode, "main", EPST_PS_3_0,
+                nullptr, EMT_SOLID);
+
+            if (materialType == -1)
+            {
+                std::cerr << "Failed to create custom shader material!" << std::endl;
+                materialType = EMT_SOLID; // Fallback to solid material
+            }
+            else
+            {
+                std::cout << "Custom Unreal-style shader loaded successfully!" << std::endl;
+            }
+        }
+    }
+    else
+    {
+        std::cerr << "Shader 3.0 not supported, using default material" << std::endl;
+        materialType = EMT_SOLID;
+    }
 
     /*=========================================================
     LOAD MAP
-    =========================================================k*/
+    =========================================================*/
     scene::ISceneCollisionManager* levelCollisionManager = nullptr;
-    IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_map_2.obj");
+    IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_level/test_level.obj");
     if (!mapMesh) {
-        std::cerr << "Failed to load level mesh: assets/test_map_2.obj" << std::endl;
+        std::cerr << "Failed to load level mesh: assets/test_level/test_level.obj" << std::endl;
         device->drop();
         return 1;
     }
     IMeshSceneNode* mapNode = smgr->addMeshSceneNode(mapMesh->getMesh(0));
 
     if (mapNode) {
-        mapNode->setMaterialFlag(EMF_LIGHTING, false);
-        mapNode->setMaterialFlag(EMF_WIREFRAME, false); // Show map solid
+        mapNode->setMaterialType((E_MATERIAL_TYPE)materialType);
+        mapNode->setMaterialFlag(EMF_LIGHTING, true); // Enable lighting for shader
+        mapNode->setMaterialFlag(EMF_WIREFRAME, false);
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setID(IDFlag_IsPickable);
         mapNode->setVisible(true);
+
+        // Set PBR material properties
+        for (u32 i = 0; i < mapNode->getMaterialCount(); i++)
+        {
+            SMaterial& mat = mapNode->getMaterial(i);
+            mat.DiffuseColor.set(255, 180, 180, 180); // Base color (light gray)
+            mat.AmbientColor.set(255, 60, 60, 70);    // Ambient color (cool ambient)
+            mat.SpecularColor.set(255, 255, 255, 255); // Specular
+            mat.Shininess = 32.0f;
+        }
 
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
             mapNode->getMesh(), mapNode, 128
         );
 
-        if (!selector) {
-            std::cerr << "Failed to create triangle selector for level mesh!" << std::endl;
-            device->drop();
-            return 1;
-        }
-
         if (selector) {
             mapNode->setTriangleSelector(selector);
-            selector->drop(); // The node now holds a reference, so we can drop ours
+            selector->drop();
             levelCollisionManager = smgr->getSceneCollisionManager();
-            std::cout << "Triangle selector set successfully." << std::endl; // Debug message
-        }
-        else {
-            std::cerr << "Failed to create triangle selector!" << std::endl; // Debug message
+            std::cout << "Triangle selector set successfully." << std::endl;
         }
     }
 
     /*=========================================================
+    LIGHTING SETUP (Unreal-style)
+    =========================================================*/
+    // Add a bright directional light (sun)
+    ILightSceneNode* sunLight = smgr->addLightSceneNode(0, vector3df(100, 200, 100));
+    sunLight->setLightType(ELT_POINT);
+
+    SLight& lightData = sunLight->getLightData();
+    lightData.DiffuseColor = SColorf(1.0f, 0.95f, 0.9f, 1.0f);  // Warm sunlight
+    lightData.AmbientColor = SColorf(0.3f, 0.35f, 0.4f, 1.0f);  // Cool ambient (sky color)
+    lightData.SpecularColor = SColorf(1.0f, 1.0f, 1.0f, 1.0f);
+    lightData.Radius = 1000.0f;
+    lightData.CastShadows = false;
+
+    // Set global ambient light
+    smgr->setAmbientLight(SColorf(0.2f, 0.22f, 0.25f));
+
+    /*=========================================================
     BUILD NAVMESH
-    =========================================================k*/
+    =========================================================*/
     StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
-    NavMeshParams params; // Use default params from StaticNavMesh.h
+    NavMeshParams params;
     params.AgentHeight = params.AgentRadius * 2;
 
     std::cout << "Building navmesh..." << std::endl;
@@ -148,24 +335,23 @@ int main() {
 
         /*=========================================================
         RENDER NAVMESH
-        =========================================================k*/
-        ISceneNode* debugNavMeshNode = navMesh->renderNavMesh();
-        if (debugNavMeshNode) {
-            debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-            debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-            debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 0, 255); // Blue
-        }
+        =========================================================*/
+        //ISceneNode* debugNavMeshNode = navMesh->renderNavMesh();
+        //if (debugNavMeshNode) {
+        //    debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+        //    debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+        //    debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
+        //}
 
         /*=========================================================
         PLAYER AGENT
-        =========================================================k*/
+        =========================================================*/
         playerNode = smgr->addSphereSceneNode(params.AgentRadius);
         playerNode->setMaterialFlag(EMF_LIGHTING, false);
         playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
         vector3df initialPlayerPos(5, 1, 5);
         playerNode->setPosition(initialPlayerPos);
         playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
-
     }
     else {
         std::cerr << "FATAL: Failed to build navmesh!" << std::endl;
@@ -173,40 +359,35 @@ int main() {
 
     /*=========================================================
     CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
-    =========================================================k*/
-    // Camera parameters
-    float cameraDistance = 15.0f;      // Distance from player
-    float cameraAngleH = 0.0f;         // Horizontal angle (yaw) in degrees
-    float cameraAngleV = 45.0f;        // Vertical angle (pitch) in degrees - 90 is directly overhead
-    const float cameraRotationSpeed = 0.3f; // Sensitivity for mouse drag
+    =========================================================*/
+    float cameraDistance = 15.0f;
+    float cameraAngleH = 0.0f;
+    float cameraAngleV = 45.0f;
+    const float cameraRotationSpeed = 0.3f;
 
-    // Create perspective camera
     ICameraSceneNode* camera = smgr->addCameraSceneNode();
 
-    // Set up perspective projection
     const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
     camera->setAspectRatio(aspectRatio);
-    camera->setFOV(core::degToRad(60.0f));  // 60 degree field of view
+    camera->setFOV(core::degToRad(60.0f));
     camera->setNearValue(0.1f);
     camera->setFarValue(1000.0f);
 
-    // Set initial camera position (overhead view)
     camera->setPosition(vector3df(0, 15, 0));
     camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
     GUI
-    =========================================================k*/
+    =========================================================*/
     IGUIStaticText* stats = guienv->addStaticText(L"", rect<s32>(10, 10, 400, 30));
     stats->setOverrideColor(SColor(255, 255, 255, 255));
 
     /*=========================================================
     MAIN LOOP
-    =========================================================k*/
+    =========================================================*/
     u32 then = device->getTimer()->getTime();
 
     while (device->run()) {
-        // Delta time
         u32 now = device->getTimer()->getTime();
         float deltaTime = (float)(now - then) / 1000.0f;
         then = now;
@@ -222,64 +403,51 @@ int main() {
         }
 
         /*--------------------------------------------------------
-		RIGHT-CLICK CAMERA ROTATION
+        RIGHT-CLICK CAMERA ROTATION
         --------------------------------------------------------*/
         if (receiver.IsRightMouseDown()) {
             position2di dragDelta = receiver.getMouseDragDelta();
 
-            // Update camera angles based on mouse drag
             cameraAngleH -= dragDelta.X * cameraRotationSpeed;
             cameraAngleV -= dragDelta.Y * cameraRotationSpeed;
 
-            // Clamp vertical angle to prevent flipping
             if (cameraAngleV < 5.0f) cameraAngleV = 5.0f;
             if (cameraAngleV > 89.0f) cameraAngleV = 89.0f;
         }
 
         /*--------------------------------------------------------
-		LEFT-CLICK MOVE PLAYER
+        LEFT-CLICK MOVE PLAYER
         --------------------------------------------------------*/
         if (success && receiver.wasMouseClicked()) {
             position2di mousePos = receiver.getMousePos();
 
-            std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
-
             core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
-                mousePos,
-                camera
-            );
+                mousePos, camera);
 
             core::vector3df intersectionPoint;
             core::triangle3df hitTriangle;
 
             scene::ISceneNode* selectedSceneNode =
                 levelCollisionManager->getSceneNodeAndCollisionPointFromRay(
-                    ray,
-                    intersectionPoint, // This will be the position of the collision
-                    hitTriangle, // This will be the triangle hit in the collision
-                    IDFlag_IsPickable, // This ensures that only nodes that we have
-                    // set up to be pickable are considered
-                    0); // Check the entire scene
+                    ray, intersectionPoint, hitTriangle, IDFlag_IsPickable, 0);
 
-            if (selectedSceneNode) {
-                // 5. Check if the node we hit was the levelNode
-                //    (This is technically optional if it's your only pickable node)
-                if (selectedSceneNode == mapNode) {
-                    std::cout << "Mouse clicked mesh at: "
-                        << intersectionPoint.X << ", "
-                        << intersectionPoint.Y << ", "
-                        << intersectionPoint.Z << std::endl;
+            if (selectedSceneNode && selectedSceneNode == mapNode) {
+                std::cout << "Mouse clicked mesh at: "
+                    << intersectionPoint.X << ", "
+                    << intersectionPoint.Y << ", "
+                    << intersectionPoint.Z << std::endl;
 
-                    if (playerId != -1) {
-                        navMesh->setAgentTarget(playerId, intersectionPoint);
-                    }
+                if (playerId != -1) {
+                    navMesh->setAgentTarget(playerId, intersectionPoint);
                 }
             }
-            else {
-                // The ray didn't hit any node *flagged as pickable*
-                std::cout << "Mouse ray missed all pickable nodes." << std::endl;
-            }
         }
+
+        /*--------------------------------------------------------
+        UPDATE SHADER UNIFORMS
+        --------------------------------------------------------*/
+        // Shader uniforms are automatically handled by Irrlicht
+        // through the material properties and light settings
 
         /*--------------------------------------------------------
         CAMERA FOLLOW PLAYER
@@ -287,11 +455,9 @@ int main() {
         if (success && playerNode) {
             vector3df playerPos = playerNode->getPosition();
 
-            // Calculate camera position using spherical coordinates
             float angleHRad = core::degToRad(cameraAngleH);
             float angleVRad = core::degToRad(cameraAngleV);
 
-            // Spherical to Cartesian conversion
             float x = playerPos.X + cameraDistance * sin(angleVRad) * cos(angleHRad);
             float y = playerPos.Y + cameraDistance * cos(angleVRad);
             float z = playerPos.Z + cameraDistance * sin(angleVRad) * sin(angleHRad);
@@ -301,11 +467,10 @@ int main() {
         }
 
         // --- Render ---
-        driver->beginScene(true, true, SColor(255, 20, 20, 30));
+        driver->beginScene(true, true, SColor(255, 30, 35, 45)); // Darker, cooler background
 
         smgr->drawAll();
 
-        // Render agent debug paths
         if (success) {
             navMesh->renderAgentPaths(driver);
         }
@@ -318,16 +483,13 @@ int main() {
         str += L" | Tris: "; str += driver->getPrimitiveCountDrawn();
         if (success) {
             str += L" | Agents: "; str += (int)followerIds.size() + 1;
-        }
-        else {
-            str += L" | NAVMESH BUILD FAILED";
+            str += L" | Shader: Unreal PBR";
         }
         stats->setText(str.c_str());
     }
 
-    // 10. Cleanup
     if (navMesh)
-        navMesh->drop(); // It's an ISceneNode, so drop it
+        navMesh->drop();
 
     device->drop();
     return 0;
