@@ -85,6 +85,8 @@ int main() {
     ISceneManager* smgr = device->getSceneManager();
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
+	receiver.setGUIEnvironment(guienv);
+
 
     /*=========================================================
     LOAD MAP
