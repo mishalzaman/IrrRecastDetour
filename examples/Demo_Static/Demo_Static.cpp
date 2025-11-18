@@ -382,6 +382,114 @@ int main() {
     IGUIStaticText* stats = guienv->addStaticText(L"", rect<s32>(10, 10, 400, 30));
     stats->setOverrideColor(SColor(255, 255, 255, 255));
 
+    // Add this after the GUI setup section, after creating the stats text
+
+    /*=========================================================
+    FIXED RIGHT PANEL
+    =========================================================*/
+    const s32 panelWidth = 250;
+    const s32 panelX = windowWidth - panelWidth;
+
+    IGUISkin* skin = guienv->getSkin();
+    IGUIFont* font = guienv->getFont("assets/roboto.ttf");
+    if (font)
+    {
+        skin->setFont(font);
+    }
+    else {
+		std::cerr << "Failed to load font: assets/roboto.ttf" << std::endl;
+    }
+
+
+    // Create the main panel background (using IGUIStaticText for styling)
+    IGUIStaticText* rightPanel = guienv->addStaticText(
+        L"",
+        rect<s32>(panelX, 0, windowWidth, windowHeight),
+        true,  // border
+        false, // wordWrap
+        0,     // parent
+        -1,    // id
+        true   // fillBackground
+    );
+
+    // Style the panel - methods are available on IGUIStaticText
+    rightPanel->setBackgroundColor(SColor(200, 40, 45, 55));
+    rightPanel->setDrawBorder(true);
+    rightPanel->setOverrideColor(SColor(255, 200, 200, 200));
+
+    // Make it non-movable by disabling all mouse interactions that could move it
+    rightPanel->setNotClipped(false);
+    rightPanel->grab(); // Keep a reference to prevent accidental deletion
+
+    // Add panel title
+    IGUIStaticText* panelTitle = guienv->addStaticText(
+        L"Control Panel",
+        rect<s32>(10, 10, panelWidth - 10, 35),
+        false,
+        false,
+        rightPanel
+    );
+    panelTitle->setOverrideColor(SColor(255, 255, 255, 255));
+    panelTitle->setOverrideFont(guienv->getBuiltInFont());
+
+    // Add some example controls to the panel
+    s32 yOffset = 50;
+
+    // Agent count label
+    IGUIStaticText* agentLabel = guienv->addStaticText(
+        L"Agents: 1",
+        rect<s32>(10, yOffset, panelWidth - 10, yOffset + 20),
+        false,
+        false,
+        rightPanel
+    );
+    agentLabel->setOverrideColor(SColor(255, 200, 200, 200));
+
+    yOffset += 30;
+
+    // NavMesh info
+    IGUIStaticText* navMeshLabel = guienv->addStaticText(
+        L"NavMesh: Active",
+        rect<s32>(10, yOffset, panelWidth - 10, yOffset + 20),
+        false,
+        false,
+        rightPanel
+    );
+    navMeshLabel->setOverrideColor(SColor(255, 100, 255, 100));
+
+    yOffset += 30;
+
+    // Separator line (using a thin static text box)
+    IGUIStaticText* separator = guienv->addStaticText(
+        L"",
+        rect<s32>(10, yOffset, panelWidth - 10, yOffset + 2),
+        false,
+        false,
+        rightPanel
+    );
+    separator->setBackgroundColor(SColor(255, 80, 85, 95));
+    separator->setDrawBackground(true);
+
+    yOffset += 15;
+
+    // Instructions
+    IGUIStaticText* instructions = guienv->addStaticText(
+        L"Controls:\n\n"
+        L"Left Click:\n  Move agent\n\n"
+        L"Right Click + Drag:\n  Rotate camera\n\n"
+        L"ESC:\n  Exit",
+        rect<s32>(10, yOffset, panelWidth - 10, yOffset + 150),
+        false,
+        true, // word wrap
+        rightPanel
+    );
+    instructions->setOverrideColor(SColor(255, 180, 180, 180));
+
+    // Store references for updates (add these as global variables or class members)
+    // You can update these labels in your main loop
+    IGUIStaticText* agentCountLabel = agentLabel;
+    IGUIStaticText* navMeshStatusLabel = navMeshLabel;
+
     /*=========================================================
     MAIN LOOP
     =========================================================*/
