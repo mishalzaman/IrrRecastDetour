@@ -302,13 +302,13 @@ int main() {
     LIGHTING SETUP (Unreal-style)
     =========================================================*/
     // Add a bright directional light (sun)
-    ILightSceneNode* sunLight = smgr->addLightSceneNode(0, vector3df(100, 200, 100));
+    ILightSceneNode* sunLight = smgr->addLightSceneNode(0, vector3df(100, 100, 100));
     sunLight->setLightType(ELT_POINT);
 
     SLight& lightData = sunLight->getLightData();
     lightData.DiffuseColor = SColorf(1.0f, 0.95f, 0.9f, 1.0f);  // Warm sunlight
-    lightData.AmbientColor = SColorf(0.3f, 0.35f, 0.4f, 1.0f);  // Cool ambient (sky color)
-    lightData.SpecularColor = SColorf(1.0f, 1.0f, 1.0f, 1.0f);
+    lightData.AmbientColor = SColorf(1.0f, 0.35f, 0.4f, 1.0f);  // Cool ambient (sky color)
+    lightData.SpecularColor = SColorf(0.1f, 0.1f, 0.1f, 0.9f);
     lightData.Radius = 1000.0f;
     lightData.CastShadows = false;
 
