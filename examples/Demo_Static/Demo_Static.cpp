@@ -394,8 +394,29 @@ int main() {
         debugNavMeshNode = nullptr;
 
         NavMeshParams params;
-        params.CellSize = cellSize;
-        params.AgentHeight = params.AgentRadius * 2;
+
+        // 1. Rasterization
+        params.CellSize = navMeshGui->getSliderValue("CellSize");
+        params.CellHeight = navMeshGui->getSliderValue("CellHeight");
+
+        // 2. Agent Properties
+        params.AgentHeight = navMeshGui->getSliderValue("AgentHeight");
+        params.AgentRadius = navMeshGui->getSliderValue("AgentRadius");
+        params.AgentMaxClimb = navMeshGui->getSliderValue("AgentMaxClimb");
+        params.AgentMaxSlope = navMeshGui->getSliderValue("AgentMaxSlope");
+
+        // 3. Region / Filtering
+        params.RegionMinSize = navMeshGui->getSliderValue("RegionMinSize");
+        params.RegionMergeSize = navMeshGui->getSliderValue("RegionMergeSize");
+
+        // 4. Polygonization
+        params.EdgeMaxLen = navMeshGui->getSliderValue("EdgeMaxLen");
+        params.EdgeMaxError = navMeshGui->getSliderValue("EdgeMaxError");
+        params.VertsPerPoly = navMeshGui->getSliderValue("VertsPerPoly");
+
+        // 5. Detail Mesh
+        params.DetailSampleDist = navMeshGui->getSliderValue("DetailSampleDist");
+        params.DetailSampleMaxError = navMeshGui->getSliderValue("DetailSampleMaxError");
 
         std::cout << "Re-building navmesh..." << std::endl;
         bool success = navMesh->build(mapNode, params);
