@@ -2,6 +2,7 @@
 
 #include <irrlicht.h>
 #include <map>
+#include <functional>
 
 using namespace irr;
 using namespace core;
@@ -20,6 +21,9 @@ public:
     // Getter for slider values
     f32 getSliderValue(const stringc& name) const;
 
+    // Set callback for build button
+    void setBuildCallback(std::function<void()> callback);
+
 private:
     struct SliderControl
     {
@@ -35,6 +39,7 @@ private:
     void _addSlider(const stringc& name, const wchar_t* label,
         f32 minValue, f32 maxValue, f32 defaultValue, s32& yPos);
     void _updateSliderValueDisplay(const stringc& name);
+    void _onBuildButtonPressed();
 
     IGUIEnvironment* _guienv;
     IGUIStaticText* _mainPanel;
@@ -42,7 +47,13 @@ private:
     std::map<stringc, SliderControl> _sliders;
     std::map<s32, stringc> _idToName; // Map slider ID to name
 
+    IGUIButton* _buildButton;
+    std::function<void()> _buildCallback;
+
     s32 _nextSliderID;
+
+    // Button IDs
+    static const s32 BUILD_BUTTON_ID = 2000;
 
     // Layout constants
     static const s32 MARGIN = 10;

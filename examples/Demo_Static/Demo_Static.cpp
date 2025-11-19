@@ -329,18 +329,21 @@ int main() {
     std::vector<int> followerIds;
     vector3df lastPlayerPos(0, 0, 0);
 
+    ISceneNode* debugNavMeshNode = nullptr;
+
     if (success) {
         std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
 
         /*=========================================================
         RENDER NAVMESH
         =========================================================*/
-        //ISceneNode* debugNavMeshNode = navMesh->renderNavMesh();
-        //if (debugNavMeshNode) {
-        //    debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-        //    debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-        //    debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
-        //}
+
+        debugNavMeshNode = navMesh->renderNavMesh();
+        if (debugNavMeshNode) {
+            debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+            debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+            debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
+        }
 
         /*=========================================================
         PLAYER AGENT
@@ -376,13 +379,53 @@ int main() {
     camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
-    GUI
+    GUI SETUP WITH BUILD CALLBACK
     =========================================================*/
     NavMeshGUI* navMeshGui = new NavMeshGUI(guienv);
     navMeshGui->Load(windowWidth, windowHeight);
 
     receiver.setGUIEnvironment(guienv);
     receiver.setNavMeshGUI(navMeshGui);
+
+    navMeshGui->setBuildCallback([&]() {
+        f32 cellSize = navMeshGui->getSliderValue("CellSize");
+
+        // Don't manually remove it - let the StaticNavMesh::build() handle cleanup
+        debugNavMeshNode = nullptr;
+
+        NavMeshParams params;
+        params.CellSize = cellSize;
+        params.AgentHeight = params.AgentRadius * 2;
+
+        std::cout << "Re-building navmesh..." << std::endl;
+        bool success = navMesh->build(mapNode, params);
+
+        if (success) {
+            std::cout << "NavMesh built successfully! Build time: "
+                << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
+
+            // Create new debug visualization
+            debugNavMeshNode = navMesh->renderNavMesh();
+            if (debugNavMeshNode) {
+                debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+                debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+                debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255);
+            }
+
+            vector3df playerPosition = playerNode->getPosition();
+            playerNode->remove();
+            playerNode = nullptr;
+            playerNode = smgr->addSphereSceneNode(params.AgentRadius);
+            playerNode->setMaterialFlag(EMF_LIGHTING, false);
+            playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
+            vector3df initialPlayerPos(playerPosition);
+            playerNode->setPosition(initialPlayerPos);
+            playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
+        }
+        else {
+            std::cout << "NavMesh build failed!" << std::endl;
+        }
+    });
 
     /*=========================================================
     MAIN LOOP

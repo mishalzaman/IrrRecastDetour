@@ -4,6 +4,7 @@
 NavMeshGUI::NavMeshGUI(IGUIEnvironment* guienv) :
     _guienv(guienv),
     _mainPanel(nullptr),
+    _buildButton(nullptr),
     _nextSliderID(1000)
 {
 }
@@ -26,6 +27,17 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
     // Add more sliders here:
     // _addSlider("CellHeight", L"CellHeight:", 0.1f, 2.0f, 0.8f, yPos);
     // _addSlider("AgentRadius", L"AgentRadius:", 0.1f, 5.0f, 1.0f, yPos);
+
+    // Add some spacing before the button
+    yPos += ROW_SPACING;
+
+    // Add Build button
+    _buildButton = _guienv->addButton(
+        rect<s32>(MARGIN, yPos, MARGIN + 150, yPos + 30),
+        _mainPanel,
+        BUILD_BUTTON_ID,
+        L"Build NavMesh"
+    );
 }
 
 void NavMeshGUI::_creatPanel(u32 windowWidth, u32 windowHeight)
@@ -155,6 +167,28 @@ bool NavMeshGUI::OnEvent(const SEvent& event)
                 return true;
             }
         }
+        else if (event.GUIEvent.EventType == EGET_BUTTON_CLICKED)
+        {
+            s32 id = event.GUIEvent.Caller->getID();
+            if (id == BUILD_BUTTON_ID)
+            {
+                _onBuildButtonPressed();
+                return true;
+            }
+        }
     }
     return false;
+}
+
+void NavMeshGUI::setBuildCallback(std::function<void()> callback)
+{
+    _buildCallback = callback;
+}
+
+void NavMeshGUI::_onBuildButtonPressed()
+{
+    if (_buildCallback)
+    {
+        _buildCallback();
+    }
 }
