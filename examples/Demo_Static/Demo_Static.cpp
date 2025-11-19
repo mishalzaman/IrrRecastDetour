@@ -5,6 +5,7 @@
 
 #include "../common/InputEventReceiver.h"
 #include "../common/Config.h"
+#include "../common/NavMeshGUI.h"
 
 // Namespaces
 using namespace irr;
@@ -221,8 +222,6 @@ int main() {
     ISceneManager* smgr = device->getSceneManager();
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
-    receiver.setGUIEnvironment(guienv);
-
     /*=========================================================
     CUSTOM SHADER SETUP
     =========================================================*/
@@ -379,36 +378,11 @@ int main() {
     /*=========================================================
     GUI
     =========================================================*/
-    IGUIStaticText* stats = guienv->addStaticText(L"", rect<s32>(10, 10, 400, 30));
-    stats->setOverrideColor(SColor(255, 255, 255, 255));
+    NavMeshGUI* navMeshGui = new NavMeshGUI(guienv);
+    navMeshGui->Load(windowWidth, windowHeight);
 
-    // Add this after the GUI setup section, after creating the stats text
-
-    /*=========================================================
-    FIXED RIGHT PANEL
-    =========================================================*/
-    const s32 panelWidth = 364;
-    const s32 panelX = windowWidth - panelWidth;
-
-    // Create the main panel background (using IGUIStaticText for styling)
-    IGUIStaticText* rightPanel = guienv->addStaticText(
-        L"",
-        rect<s32>(panelX, 0, windowWidth, windowHeight),
-        true,  // border
-        false, // wordWrap
-        0,     // parent
-        -1,    // id
-        true   // fillBackground
-    );
-
-    // Style the panel - methods are available on IGUIStaticText
-    rightPanel->setBackgroundColor(SColor(200, 40, 45, 55));
-    rightPanel->setDrawBorder(true);
-    rightPanel->setOverrideColor(SColor(255, 200, 200, 200));
-
-    // Make it non-movable by disabling all mouse interactions that could move it
-    rightPanel->setNotClipped(false);
-    rightPanel->grab(); // Keep a reference to prevent accidental deletion
+    receiver.setGUIEnvironment(guienv);
+    receiver.setNavMeshGUI(navMeshGui);
 
     /*=========================================================
     MAIN LOOP
@@ -505,15 +479,6 @@ int main() {
 
         guienv->drawAll();
         driver->endScene();
-
-        // Update stats
-        stringw str = L"FPS: "; str += driver->getFPS();
-        str += L" | Tris: "; str += driver->getPrimitiveCountDrawn();
-        if (success) {
-            str += L" | Agents: "; str += (int)followerIds.size() + 1;
-            str += L" | Shader: Unreal PBR";
-        }
-        stats->setText(str.c_str());
     }
 
     if (navMesh)

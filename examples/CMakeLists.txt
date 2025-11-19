@@ -3,6 +3,8 @@ set(DEMO_COMMON_SOURCES
     "common/InputEventReceiver.cpp"
     "common/InputEventReceiver.h"
     "common/Config.h"
+    "common/NavMeshGUI.h"
+    "common/NavMeshGUI.cpp"
 )
 
 # --- Demo 1: Static NavMesh ---
