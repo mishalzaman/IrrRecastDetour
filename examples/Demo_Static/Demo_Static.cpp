@@ -3,6 +3,9 @@
 #include <vector>
 #include <IrrRecastDetour/StaticNavMesh.h>
 
+#include <fstream>
+#include <sstream>
+
 #include "../common/InputEventReceiver.h"
 #include "../common/Config.h"
 #include "../common/NavMeshGUI.h"
@@ -29,150 +32,19 @@ enum
     IDFlag_IsHighlightable = 1 << 1
 };
 
-// Vertex Shader (Unreal Engine style)
-const char* vertexShaderCode = R"(
-#version 330 core
-
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inTexCoord;
-
-uniform mat4 mWorldViewProj;
-uniform mat4 mWorld;
-uniform vec3 mLightPos;
-uniform vec3 mCameraPos;
-
-out vec3 fragPos;
-out vec3 fragNormal;
-out vec2 fragTexCoord;
-out vec3 viewDir;
-out vec3 lightDir;
-
-void main()
-{
-    vec4 worldPos = mWorld * vec4(inPosition, 1.0);
-    fragPos = worldPos.xyz;
-    fragNormal = normalize(mat3(mWorld) * inNormal);
-    fragTexCoord = inTexCoord;
-    
-    viewDir = normalize(mCameraPos - fragPos);
-    lightDir = normalize(mLightPos - fragPos);
-    
-    gl_Position = mWorldViewProj * vec4(inPosition, 1.0);
+std::string readFile(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        std::cerr << "Could not open file: " << filePath << std::endl;
+        return "";
+    }
+    else {
+		std::cout << "Successfully opened file: " << filePath << std::endl;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
-)";
-
-// Fragment Shader (Unreal Engine PBR-style)
-const char* fragmentShaderCode = R"(
-#version 330 core
-
-in vec3 fragPos;
-in vec3 fragNormal;
-in vec2 fragTexCoord;
-in vec3 viewDir;
-in vec3 lightDir;
-
-uniform vec3 mLightColor;
-uniform vec3 mAmbientColor;
-uniform vec4 mBaseColor;
-uniform float mMetallic;
-uniform float mRoughness;
-uniform float mAmbientOcclusion;
-
-out vec4 FragColor;
-
-const float PI = 3.14159265359;
-
-// Fresnel-Schlick approximation
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
-}
-
-// GGX/Trowbridge-Reitz normal distribution
-float distributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-    
-    float num = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-    
-    return num / denom;
-}
-
-// Smith's method with GGX
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    
-    float num = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-    
-    return num / denom;
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = geometrySchlickGGX(NdotV, roughness);
-    float ggx1 = geometrySchlickGGX(NdotL, roughness);
-    
-    return ggx1 * ggx2;
-}
-
-void main()
-{
-    vec3 N = normalize(fragNormal);
-    vec3 V = normalize(viewDir);
-    vec3 L = normalize(lightDir);
-    vec3 H = normalize(V + L);
-    
-    // Base reflectivity (F0)
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, mBaseColor.rgb, mMetallic);
-    
-    // Calculate radiance
-    float distance = length(lightDir);
-    float attenuation = 1.0 / (distance * distance * 0.01 + 1.0);
-    vec3 radiance = mLightColor * attenuation;
-    
-    // Cook-Torrance BRDF
-    float NDF = distributionGGX(N, H, mRoughness);
-    float G = geometrySmith(N, V, L, mRoughness);
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-    
-    vec3 kS = F;
-    vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - mMetallic;
-    
-    vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
-    vec3 specular = numerator / denominator;
-    
-    // Add to outgoing radiance
-    float NdotL = max(dot(N, L), 0.0);
-    vec3 Lo = (kD * mBaseColor.rgb / PI + specular) * radiance * NdotL;
-    
-    // Ambient lighting with AO
-    vec3 ambient = mAmbientColor * mBaseColor.rgb * mAmbientOcclusion;
-    
-    vec3 color = ambient + Lo;
-    
-    // HDR tonemapping (Unreal uses ACES, this is Reinhard for simplicity)
-    color = color / (color + vec3(1.0));
-    
-    // Gamma correction
-    color = pow(color, vec3(1.0/2.2));
-    
-    FragColor = vec4(color, mBaseColor.a);
-}
-)";
 
 /**
  * @brief Finds the 3D world position of a mouse click on the level geometry.
@@ -223,35 +95,103 @@ int main() {
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
     /*=========================================================
+    CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
+    =========================================================*/
+    float cameraDistance = 15.0f;
+    float cameraAngleH = 0.0f;
+    float cameraAngleV = 45.0f;
+    const float cameraRotationSpeed = 0.3f;
+
+    ICameraSceneNode* camera = smgr->addCameraSceneNode();
+
+    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
+    camera->setAspectRatio(aspectRatio);
+    camera->setFOV(core::degToRad(60.0f));
+    camera->setNearValue(0.1f);
+    camera->setFarValue(1000.0f);
+
+    camera->setPosition(vector3df(0, 15, 0));
+    camera->setTarget(vector3df(0, 0, 0));
+
+    /*=========================================================
+    CUSTOM SHADER CALLBACK
+    =========================================================*/
+    class ShaderCallback : public video::IShaderConstantSetCallBack
+    {
+    private:
+        ISceneManager* smgr;
+
+    public:
+        ShaderCallback(ISceneManager* sceneManager) : smgr(sceneManager) {}
+
+        virtual void OnSetConstants(video::IMaterialRendererServices* services, s32 userData)
+        {
+            video::IVideoDriver* driver = services->getVideoDriver();
+
+            // 1. MATRICES (Correct - These belong in Vertex Shader)
+            core::matrix4 worldViewProj = driver->getTransform(video::ETS_PROJECTION);
+            worldViewProj *= driver->getTransform(video::ETS_VIEW);
+            worldViewProj *= driver->getTransform(video::ETS_WORLD);
+            services->setVertexShaderConstant("mWorldViewProj", worldViewProj.pointer(), 16);
+
+            core::matrix4 world = driver->getTransform(video::ETS_WORLD);
+            services->setVertexShaderConstant("mWorld", world.pointer(), 16);
+
+            // 2. LIGHT POSITION (CHANGE THIS)
+            f32 lightPos[3] = { 50.0f, 50.0f, 50.0f };
+            services->setPixelShaderConstant("mLightPos", lightPos, 3);
+
+            // 3. COLORS (Correct - These are in Pixel Shader)
+            f32 lightColor[3] = { 1.0f, 1.0f, 1.0f };
+            services->setPixelShaderConstant("mLightColor", lightColor, 3);
+
+            f32 baseColor[3] = { 1.0f, 1.0f, 1.0f };
+            services->setPixelShaderConstant("mBaseColor", baseColor, 3);
+
+            int textureUnit = 0;
+            services->setPixelShaderConstant("mTexture", &textureUnit, 1);
+        }
+    };
+
+    /*=========================================================
     CUSTOM SHADER SETUP
     =========================================================*/
-    s32 materialType = 0;
+    ShaderCallback* shaderCallback = new ShaderCallback(smgr);
 
-    if (driver->queryFeature(EVDF_PIXEL_SHADER_3_0) && driver->queryFeature(EVDF_VERTEX_SHADER_3_0))
+    s32 materialType = 0;
+    std::string vertCode = readFile("assets/main.vert");
+    std::string fragCode = readFile("assets/main.frag");
+
+    if (vertCode.empty() || fragCode.empty())
+    {
+        std::cerr << "Failed to read shader files!" << std::endl;
+        materialType = EMT_SOLID;
+    }
+    else if (driver->queryFeature(video::EVDF_ARB_GLSL))
     {
         IGPUProgrammingServices* gpu = driver->getGPUProgrammingServices();
 
         if (gpu)
         {
             materialType = gpu->addHighLevelShaderMaterial(
-                vertexShaderCode, "main", EVST_VS_3_0,
-                fragmentShaderCode, "main", EPST_PS_3_0,
-                nullptr, EMT_SOLID);
+                vertCode.c_str(), "main", video::EVST_VS_1_1,
+                fragCode.c_str(), "main", video::EPST_PS_1_1,
+                shaderCallback, video::EMT_SOLID, 0, video::EGSL_DEFAULT);
 
             if (materialType == -1)
             {
                 std::cerr << "Failed to create custom shader material!" << std::endl;
-                materialType = EMT_SOLID; // Fallback to solid material
+                materialType = EMT_SOLID;
             }
             else
             {
-                std::cout << "Custom Unreal-style shader loaded successfully!" << std::endl;
+                std::cout << "Custom Unreal-style shader loaded successfully! Material type: " << materialType << std::endl;
             }
         }
     }
     else
     {
-        std::cerr << "Shader 3.0 not supported, using default material" << std::endl;
+        std::cerr << "GLSL not supported, using default material" << std::endl;
         materialType = EMT_SOLID;
     }
 
@@ -268,27 +208,26 @@ int main() {
     IMeshSceneNode* mapNode = smgr->addMeshSceneNode(mapMesh->getMesh(0));
 
     if (mapNode) {
-        mapNode->setMaterialType((E_MATERIAL_TYPE)materialType);
-        mapNode->setMaterialFlag(EMF_LIGHTING, true); // Enable lighting for shader
-        mapNode->setMaterialFlag(EMF_WIREFRAME, false);
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setID(IDFlag_IsPickable);
         mapNode->setVisible(true);
 
-        // Set PBR material properties
+        std::cout << "Map node material count: " << mapNode->getMaterialCount() << std::endl;
+
+        // Apply custom shader to ALL materials on the mesh
         for (u32 i = 0; i < mapNode->getMaterialCount(); i++)
         {
             SMaterial& mat = mapNode->getMaterial(i);
-            mat.DiffuseColor.set(255, 180, 180, 180); // Base color (light gray)
-            mat.AmbientColor.set(255, 60, 60, 70);    // Ambient color (cool ambient)
-            mat.SpecularColor.set(255, 255, 255, 255); // Specular
-            mat.Shininess = 32.0f;
+            mat.MaterialType = (E_MATERIAL_TYPE)materialType;
+            mat.Lighting = false; // Disable built-in lighting since we're using custom shader
+            mat.Wireframe = false;
         }
+
+        std::cout << "Map node material type set to: " << materialType << std::endl;
 
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
             mapNode->getMesh(), mapNode, 128
         );
-
         if (selector) {
             mapNode->setTriangleSelector(selector);
             selector->drop();
@@ -296,23 +235,6 @@ int main() {
             std::cout << "Triangle selector set successfully." << std::endl;
         }
     }
-
-    /*=========================================================
-    LIGHTING SETUP (Unreal-style)
-    =========================================================*/
-    // Add a bright directional light (sun)
-    ILightSceneNode* sunLight = smgr->addLightSceneNode(0, vector3df(100, 100, 100));
-    sunLight->setLightType(ELT_POINT);
-
-    SLight& lightData = sunLight->getLightData();
-    lightData.DiffuseColor = SColorf(1.0f, 0.95f, 0.9f, 1.0f);  // Warm sunlight
-    lightData.AmbientColor = SColorf(1.0f, 0.35f, 0.4f, 1.0f);  // Cool ambient (sky color)
-    lightData.SpecularColor = SColorf(0.1f, 0.1f, 0.1f, 0.9f);
-    lightData.Radius = 1000.0f;
-    lightData.CastShadows = false;
-
-    // Set global ambient light
-    smgr->setAmbientLight(SColorf(0.2f, 0.22f, 0.25f));
 
     /*=========================================================
     BUILD NAVMESH
@@ -358,25 +280,6 @@ int main() {
     else {
         std::cerr << "FATAL: Failed to build navmesh!" << std::endl;
     }
-
-    /*=========================================================
-    CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
-    =========================================================*/
-    float cameraDistance = 15.0f;
-    float cameraAngleH = 0.0f;
-    float cameraAngleV = 45.0f;
-    const float cameraRotationSpeed = 0.3f;
-
-    ICameraSceneNode* camera = smgr->addCameraSceneNode();
-
-    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
-    camera->setAspectRatio(aspectRatio);
-    camera->setFOV(core::degToRad(60.0f));
-    camera->setNearValue(0.1f);
-    camera->setFarValue(1000.0f);
-
-    camera->setPosition(vector3df(0, 15, 0));
-    camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
     GUI SETUP WITH BUILD CALLBACK
