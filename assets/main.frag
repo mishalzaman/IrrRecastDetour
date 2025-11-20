@@ -9,11 +9,29 @@ uniform vec3 mLightColor;
 uniform vec3 mBaseColor;
 uniform sampler2D mTexture;
 
+// Simple ambient occlusion approximation using vertex normal facing
+float approximateAO(vec3 normal) {
+    // Surfaces facing down tend to be in crevices/corners
+    float downFacing = dot(normal, vec3(0.0, -1.0, 0.0));
+    downFacing = max(downFacing, 0.0);
+    
+    // Reduce ambient in downward-facing areas
+    float ao = 1.0 - (downFacing * 0.6);
+    
+    // Add subtle cavity darkening based on normal variation
+    float cavityFactor = 1.0 - pow(abs(normal.y), 2.0) * 0.3;
+    
+    return ao * cavityFactor;
+}
+
 void main()
 {
     vec3 N = normalize(fragNormal);
     vec3 L = normalize(mLightPos - fragPos);
     vec3 V = normalize(-fragPos); // View direction (camera is at origin in view space)
+    
+    // Calculate ambient occlusion
+    float ao = approximateAO(N);
     
     // Wrapped diffuse for softer shadows (Half-Lambert technique)
     float NdotL = dot(N, L);
@@ -32,11 +50,11 @@ void main()
     // Sample texture
     vec4 texColor = texture2D(mTexture, fragTexCoord);
     
-    // Increased ambient for softer overall look
-    vec3 ambient = 0.5 * mBaseColor;
+    // Increased ambient for softer overall look, modulated by AO
+    vec3 ambient = 0.5 * mBaseColor * ao;
     
-    // Softer diffuse with less contrast
-    vec3 diffuse = wrappedDiff * mLightColor * mBaseColor * 0.7;
+    // Softer diffuse with less contrast, also affected by AO
+    vec3 diffuse = wrappedDiff * mLightColor * mBaseColor * 0.7 * ao;
     
     // Combine all lighting components
     vec3 rimLight = rim * mLightColor;
