@@ -196,7 +196,12 @@ int main() {
     }
 
     /*=========================================================
-    LOAD MAP
+                           NAVMESH SETUP
+     ----------------------------------------------------------
+    * =========================================================*/
+
+    /*=========================================================
+    1. LOAD MAP
     =========================================================*/
     scene::ISceneCollisionManager* levelCollisionManager = nullptr;
     IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_level/test_level.obj");
@@ -214,12 +219,11 @@ int main() {
 
         std::cout << "Map node material count: " << mapNode->getMaterialCount() << std::endl;
 
-        // Apply custom shader to ALL materials on the mesh
         for (u32 i = 0; i < mapNode->getMaterialCount(); i++)
         {
             SMaterial& mat = mapNode->getMaterial(i);
             mat.MaterialType = (E_MATERIAL_TYPE)materialType;
-            mat.Lighting = false; // Disable built-in lighting since we're using custom shader
+            mat.Lighting = false;
             mat.Wireframe = false;
         }
 
@@ -237,13 +241,17 @@ int main() {
     }
 
     /*=========================================================
-    BUILD NAVMESH
+    2. CREATE AND BUILD NAVMESH
     =========================================================*/
+	// a. Initialize StaticNavMesh and.
     StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
+
+    // b. Create a NavMeshParams struct. 
+    //    You can change the parameters to suit the map and agent requirements. 
     NavMeshParams params;
     params.AgentHeight = params.AgentRadius * 2;
 
-    std::cout << "Building navmesh..." << std::endl;
+	// c. Build the navmesh from your mesh node and NavMeshParams parameters.
     bool success = navMesh->build(mapNode, params);
 
     if (!success) {
@@ -251,10 +259,8 @@ int main() {
 		return 1;
 	}
 
-    std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
-
     /*=========================================================
-    RENDER NAVMESH
+	2.a RENDER NAVMESH (OPTIONAL DEBUG VISUALIZATION)
     =========================================================*/
 
     ISceneNode* debugNavMeshNode = nullptr;
@@ -266,7 +272,7 @@ int main() {
     }
 
     /*=========================================================
-    PLAYER AGENT
+    3. ADD PLAYER AGENT
     =========================================================*/
     ISceneNode* playerNode = nullptr;
     int playerId = -1;
@@ -347,20 +353,16 @@ int main() {
         else {
             std::cout << "NavMesh build failed!" << std::endl;
         }
-    });
+        });
 
     navMeshGui->setShowNavmeshCallback([&](bool show) {
         if (show) {
-            // Enable navmesh rendering
-			printf("Show navmesh\n");
             debugNavMeshNode->setVisible(true);
         }
         else {
-            // Disable navmesh rendering
-			printf("Hide navmesh\n");
             debugNavMeshNode->setVisible(false);
         }
-    });
+        });
 
     /*=========================================================
     MAIN LOOP
@@ -463,5 +465,7 @@ int main() {
         navMesh->drop();
 
     device->drop();
+
     return 0;
 }
+
