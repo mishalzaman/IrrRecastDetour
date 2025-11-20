@@ -204,7 +204,7 @@ int main() {
     1. LOAD MAP
     =========================================================*/
     scene::ISceneCollisionManager* levelCollisionManager = nullptr;
-    IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_level/test_level.obj");
+    IAnimatedMesh* mapMesh = smgr->getMesh("assets/example_level/example_level.obj");
     if (!mapMesh) {
         std::cerr << "Failed to load level mesh: assets/test_level/test_level.obj" << std::endl;
         device->drop();
