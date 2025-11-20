@@ -5,8 +5,17 @@ NavMeshGUI::NavMeshGUI(IGUIEnvironment* guienv) :
     _guienv(guienv),
     _mainPanel(nullptr),
     _buildButton(nullptr),
+    _showNavmeshCheckbox(nullptr),
     _nextSliderID(1000)
 {
+    irr::gui::IGUISkin* skin = _guienv->getSkin();
+
+    if (skin) {
+        skin->setColor(
+            irr::gui::EGDC_BUTTON_TEXT, // Or EGDC_STATIC_TEXT, depending on the skin/context
+            irr::video::SColor(255, 255, 255, 255) // White (Alpha, Red, Green, Blue)
+        );
+    }
 }
 
 NavMeshGUI::~NavMeshGUI()
@@ -45,8 +54,19 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
     _addSlider("DetailSampleDist", L"Det Sample Dist:", 0.0f, 20.0f, 6.0f, yPos);
     _addSlider("DetailSampleMaxError", L"Det Sample Err:", 0.0f, 10.0f, 1.0f, yPos);
 
-    // Add some spacing before the button
+    // Add some spacing before controls
     yPos += ROW_SPACING;
+
+    // Add Show Navmesh checkbox
+    _showNavmeshCheckbox = _guienv->addCheckBox(
+        true, // initially unchecked
+        rect<s32>(MARGIN, yPos, MARGIN + 200, yPos + 25),
+        _mainPanel,
+        SHOW_NAVMESH_CHECKBOX_ID,
+        L"Show Navmesh"
+    );
+
+    yPos += 35; // spacing after checkbox
 
     // Add Build button
     _buildButton = _guienv->addButton(
@@ -193,6 +213,15 @@ bool NavMeshGUI::OnEvent(const SEvent& event)
                 return true;
             }
         }
+        else if (event.GUIEvent.EventType == EGET_CHECKBOX_CHANGED)
+        {
+            s32 id = event.GUIEvent.Caller->getID();
+            if (id == SHOW_NAVMESH_CHECKBOX_ID)
+            {
+                _onShowNavmeshToggled();
+                return true;
+            }
+        }
     }
     return false;
 }
@@ -202,10 +231,24 @@ void NavMeshGUI::setBuildCallback(std::function<void()> callback)
     _buildCallback = callback;
 }
 
+void NavMeshGUI::setShowNavmeshCallback(std::function<void(bool)> callback)
+{
+    _showNavmeshCallback = callback;
+}
+
 void NavMeshGUI::_onBuildButtonPressed()
 {
     if (_buildCallback)
     {
         _buildCallback();
+    }
+}
+
+void NavMeshGUI::_onShowNavmeshToggled()
+{
+    if (_showNavmeshCallback && _showNavmeshCheckbox)
+    {
+        bool isChecked = _showNavmeshCheckbox->isChecked();
+        _showNavmeshCallback(isChecked);
     }
 }

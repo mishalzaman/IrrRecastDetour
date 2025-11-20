@@ -258,12 +258,12 @@ int main() {
     =========================================================*/
 
     ISceneNode* debugNavMeshNode = nullptr;
-    //debugNavMeshNode = navMesh->renderNavMesh();
-    //if (debugNavMeshNode) {
-    //    debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-    //    debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-    //    debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
-    //}
+    debugNavMeshNode = navMesh->renderNavMesh();
+    if (debugNavMeshNode) {
+        debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+        debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+        debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
+    }
 
     /*=========================================================
     PLAYER AGENT
@@ -346,6 +346,19 @@ int main() {
         }
         else {
             std::cout << "NavMesh build failed!" << std::endl;
+        }
+    });
+
+    navMeshGui->setShowNavmeshCallback([&](bool show) {
+        if (show) {
+            // Enable navmesh rendering
+			printf("Show navmesh\n");
+            debugNavMeshNode->setVisible(true);
+        }
+        else {
+            // Disable navmesh rendering
+			printf("Hide navmesh\n");
+            debugNavMeshNode->setVisible(false);
         }
     });
 
