@@ -246,40 +246,38 @@ int main() {
     std::cout << "Building navmesh..." << std::endl;
     bool success = navMesh->build(mapNode, params);
 
-    ISceneNode* playerNode = nullptr;
-    int playerId = -1;
-    std::vector<int> followerIds;
-    vector3df lastPlayerPos(0, 0, 0);
+    if (!success) {
+        std::cerr << "Initial navmesh build failed!" << std::endl;
+		return 1;
+	}
+
+    std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
+
+    /*=========================================================
+    RENDER NAVMESH
+    =========================================================*/
 
     ISceneNode* debugNavMeshNode = nullptr;
+    //debugNavMeshNode = navMesh->renderNavMesh();
+    //if (debugNavMeshNode) {
+    //    debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+    //    debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+    //    debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
+    //}
 
-    if (success) {
-        std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
+    /*=========================================================
+    PLAYER AGENT
+    =========================================================*/
+    ISceneNode* playerNode = nullptr;
+    int playerId = -1;
+    vector3df lastPlayerPos(0, 0, 0);
+    vector3df initialPlayerPos(5, 1, 5);
 
-        /*=========================================================
-        RENDER NAVMESH
-        =========================================================*/
-
-        //debugNavMeshNode = navMesh->renderNavMesh();
-        //if (debugNavMeshNode) {
-        //    debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-        //    debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-        //    debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
-        //}
-
-        /*=========================================================
-        PLAYER AGENT
-        =========================================================*/
-        playerNode = smgr->addSphereSceneNode(params.AgentRadius);
-        playerNode->setMaterialFlag(EMF_LIGHTING, false);
-        playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
-        vector3df initialPlayerPos(5, 1, 5);
-        playerNode->setPosition(initialPlayerPos);
-        playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
-    }
-    else {
-        std::cerr << "FATAL: Failed to build navmesh!" << std::endl;
-    }
+    playerNode = smgr->addSphereSceneNode(params.AgentRadius);
+    playerNode->setMaterialFlag(EMF_LIGHTING, false);
+    playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
+    playerNode->setPosition(initialPlayerPos);
+    playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
 
     /*=========================================================
     GUI SETUP WITH BUILD CALLBACK
