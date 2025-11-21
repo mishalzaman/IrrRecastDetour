@@ -333,6 +333,7 @@ int main() {
                 << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
 
             // Create new debug visualization
+			debugNavMeshNode = nullptr;
             debugNavMeshNode = navMesh->renderNavMesh();
             if (debugNavMeshNode) {
                 debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
@@ -340,14 +341,7 @@ int main() {
                 debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255);
             }
 
-            vector3df playerPosition = playerNode->getPosition();
-            playerNode->remove();
-            playerNode = nullptr;
-            playerNode = smgr->addSphereSceneNode(params.AgentRadius);
-            playerNode->setMaterialFlag(EMF_LIGHTING, false);
-            playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
-            vector3df initialPlayerPos(playerPosition);
-            playerNode->setPosition(initialPlayerPos);
+            // Add player node to navmesh agent list
             playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
         }
         else {

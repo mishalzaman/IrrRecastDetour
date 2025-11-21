@@ -32,27 +32,27 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
     s32 yPos = 20;
 
     // 1. Rasterization
-    _addSlider("CellSize", L"Cell Size:", 0.1f, 1.0f, 0.3f, yPos);
-    _addSlider("CellHeight", L"Cell Height:", 0.1f, 1.0f, 0.2f, yPos);
+    _addSlider("CellSize", L"Cell Size:", 0.05f, 1.0f, 0.3f, yPos);
+    _addSlider("CellHeight", L"Cell Height:", 0.05f, 1.0f, 0.2f, yPos);
 
     // 2. Agent Properties
-    _addSlider("AgentHeight", L"Agent Height:", 0.1f, 5.0f, 2.0f, yPos);
-    _addSlider("AgentRadius", L"Agent Radius:", 0.0f, 5.0f, 0.6f, yPos);
-    _addSlider("AgentMaxClimb", L"Max Climb:", 0.1f, 5.0f, 0.9f, yPos);
+    _addSlider("AgentHeight", L"Agent Height:", 0.5f, 5.0f, 2.0f, yPos);
+    _addSlider("AgentRadius", L"Agent Radius:", 0.1f, 5.0f, 0.6f, yPos);
+    _addSlider("AgentMaxClimb", L"Max Climb:", 0.1f, 2.0f, 0.9f, yPos);
     _addSlider("AgentMaxSlope", L"Max Slope:", 0.0f, 90.0f, 45.0f, yPos);
 
     // 3. Region / Filtering
-    _addSlider("RegionMinSize", L"Min Region:", 0.0f, 150.0f, 8.0f, yPos);
-    _addSlider("RegionMergeSize", L"Merge Region:", 0.0f, 150.0f, 20.0f, yPos);
+    _addSlider("RegionMinSize", L"Min Region:", 1.0f, 100.0f, 8.0f, yPos);
+    _addSlider("RegionMergeSize", L"Merge Region:", 1.0f, 100.0f, 20.0f, yPos);
 
     // 4. Polygonization
     _addSlider("EdgeMaxLen", L"Max Edge Len:", 0.0f, 50.0f, 12.0f, yPos);
-    _addSlider("EdgeMaxError", L"Max Edge Err:", 0.1f, 3.0f, 1.3f, yPos);
-    _addSlider("VertsPerPoly", L"Verts Per Poly:", 3.0f, 12.0f, 6.0f, yPos);
+    _addSlider("EdgeMaxError", L"Max Edge Err:", 0.1f, 5.0f, 1.3f, yPos);
+    _addSlider("VertsPerPoly", L"Verts Per Poly:", 3.0f, 6.0f, 6.0f, yPos);
 
     // 5. Detail Mesh
-    _addSlider("DetailSampleDist", L"Det Sample Dist:", 0.0f, 20.0f, 6.0f, yPos);
-    _addSlider("DetailSampleMaxError", L"Det Sample Err:", 0.0f, 10.0f, 1.0f, yPos);
+    _addSlider("DetailSampleDist", L"Det Sample Dist:", 0.0f, 16.0f, 6.0f, yPos);
+    _addSlider("DetailSampleMaxError", L"Det Sample Err:", 0.0f, 5.0f, 1.0f, yPos);
 
     // Add some spacing before controls
     yPos += ROW_SPACING;
