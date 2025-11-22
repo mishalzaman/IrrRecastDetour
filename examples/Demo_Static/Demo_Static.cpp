@@ -339,6 +339,7 @@ int main() {
             }
 
             // Add player node to navmesh agent list
+			playerNode->setScale(vector3df(params.AgentRadius*2, params.AgentRadius * 2, params.AgentRadius * 2));
             playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
         }
         else {
