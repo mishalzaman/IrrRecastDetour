@@ -249,6 +249,11 @@ int main() {
     // b. Create a NavMeshParams struct. 
     //    You can change the parameters to suit the map and agent requirements. 
     NavMeshParams params;
+    params.CellSize = 0.17f;
+    params.CellHeight = 0.2f;
+    params.AgentHeight = 0.8f;
+    params.AgentRadius = 0.4f;
+    params.AgentMaxClimb = 0.9f;
     params.AgentHeight = params.AgentRadius * 2;
 
 	// c. Build the navmesh from your mesh node and NavMeshParams parameters.
@@ -276,7 +281,6 @@ int main() {
     =========================================================*/
     ISceneNode* playerNode = nullptr;
     int playerId = -1;
-    vector3df lastPlayerPos(0, 0, 0);
     vector3df initialPlayerPos(5, 1, 5);
 
     playerNode = smgr->addSphereSceneNode(params.AgentRadius);
