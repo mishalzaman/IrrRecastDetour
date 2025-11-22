@@ -138,15 +138,8 @@ int main() {
             services->setVertexShaderConstant("mWorld", world.pointer(), 16);
 
             // 2. LIGHT POSITION (CHANGE THIS)
-            f32 lightPos[3] = { 50.0f, 50.0f, 50.0f };
+            f32 lightPos[3] = { 50.0f, 500.0f, 50.0f };
             services->setPixelShaderConstant("mLightPos", lightPos, 3);
-
-            // 3. COLORS (Correct - These are in Pixel Shader)
-            f32 lightColor[3] = { 1.0f, 1.0f, 1.0f };
-            services->setPixelShaderConstant("mLightColor", lightColor, 3);
-
-            f32 baseColor[3] = { 1.0f, 1.0f, 1.0f };
-            services->setPixelShaderConstant("mBaseColor", baseColor, 3);
 
             int textureUnit = 0;
             services->setPixelShaderConstant("mTexture", &textureUnit, 1);
