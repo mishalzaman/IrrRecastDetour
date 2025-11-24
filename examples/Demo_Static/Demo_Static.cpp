@@ -141,6 +141,12 @@ int main() {
             f32 lightPos[3] = { 50.0f, 500.0f, 50.0f };
             services->setPixelShaderConstant("mLightPos", lightPos, 3);
 
+            f32 ambientStrength = 0.2f;
+			services->setPixelShaderConstant("mAmbientStrength", &ambientStrength, 1);
+
+			f32 specularStrength = 0.1f;
+			services->setPixelShaderConstant("mSpecularStrength", &specularStrength, 1);
+
             int textureUnit = 0;
             services->setPixelShaderConstant("mTexture", &textureUnit, 1);
         }
