@@ -32,13 +32,13 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
     s32 yPos = 20;
 
     // 1. Rasterization
-    _addSlider("CellSize", L"Cell Size:", 0.05f, 1.0f, 0.3f, yPos);
+    _addSlider("CellSize", L"Cell Size:", 0.05f, 1.0f, 0.15f, yPos);
     _addSlider("CellHeight", L"Cell Height:", 0.05f, 1.0f, 0.2f, yPos);
 
     // 2. Agent Properties
-    _addSlider("AgentHeight", L"Agent Height:", 0.5f, 5.0f, 2.0f, yPos);
-    _addSlider("AgentRadius", L"Agent Radius:", 0.1f, 5.0f, 0.6f, yPos);
-    _addSlider("AgentMaxClimb", L"Max Climb:", 0.1f, 2.0f, 0.9f, yPos);
+    _addSlider("AgentHeight", L"Agent Height:", 0.5f, 2.0f, 0.8f, yPos);
+    _addSlider("AgentRadius", L"Agent Radius:", 0.1f, 5.0f, 0.4f, yPos);
+    _addSlider("AgentMaxClimb", L"Max Climb:", 0.1f, 2.0f, 0.6f, yPos);
     _addSlider("AgentMaxSlope", L"Max Slope:", 0.0f, 90.0f, 45.0f, yPos);
 
     // 3. Region / Filtering
@@ -137,7 +137,7 @@ void NavMeshGUI::_addSlider(const stringc& name, const wchar_t* labelText,
 
     // Set default position
     f32 normalizedDefault = (defaultValue - minValue) / (maxValue - minValue);
-    control.slider->setPos((s32)(normalizedDefault * 1000));
+    control.slider->setPos((s32)(normalizedDefault * 1000 + 0.5f));
     control.slider->setSmallStep(1);
     control.slider->setLargeStep(50);
 

@@ -248,12 +248,20 @@ int main() {
     // b. Create a NavMeshParams struct. 
     //    You can change the parameters to suit the map and agent requirements. 
     NavMeshParams params;
-    params.CellSize = 0.17f;
+    params.CellSize = 0.15f;
     params.CellHeight = 0.2f;
     params.AgentHeight = 0.8f;
     params.AgentRadius = 0.4f;
-    params.AgentMaxClimb = 0.9f;
-    params.AgentHeight = params.AgentRadius * 2;
+    params.AgentMaxClimb = 0.6f;
+    params.AgentMaxSlope = 45.f;
+    params.RegionMinSize = 8.f;
+    params.RegionMergeSize = 20.f;
+	params.EdgeMaxError = 1.3f;
+	params.EdgeMaxLen = 12.f; 
+    params.VertsPerPoly = 6;
+    params.DetailSampleDist = 6.0f;
+    params.DetailSampleMaxError = 1.0f;
+    params.AgentHeight = 0.8f;
 
 	// c. Build the navmesh from your mesh node and NavMeshParams parameters.
     bool success = navMesh->build(mapNode, params);
