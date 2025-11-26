@@ -1,12 +1,14 @@
 #include <irrlicht.h>
 #include <iostream>
 #include <vector>
-#include <IrrRecastDetour/StaticNavMesh.h>
+#include <IrrRecastDetour/TiledNavMesh.h>
+
+#include <fstream>
+#include <sstream>
 
 #include "../common/InputEventReceiver.h"
 #include "../common/Config.h"
-
-
+#include "../common/NavMeshGUI.h"
 
 // Namespaces
 using namespace irr;
@@ -30,14 +32,22 @@ enum
     IDFlag_IsHighlightable = 1 << 1
 };
 
+std::string readFile(const std::string& filePath) {
+    std::ifstream file(filePath);
+    if (!file.is_open()) {
+        std::cerr << "Could not open file: " << filePath << std::endl;
+        return "";
+    }
+    else {
+        std::cout << "Successfully opened file: " << filePath << std::endl;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
 /**
  * @brief Finds the 3D world position of a mouse click on the level geometry.
- * @param smgr Irrlicht Scene Manager.
- * @param camera The active camera.
- * @param mousePos The 2D mouse position from the event receiver.
- * @param mapNode The scene node of the level geometry to test against.
- * @param[out] intersection The 3D point of collision.
- * @return true if the ray hit the mapNode, false otherwise.
  */
 bool getMouseWorldPosition(ISceneManager* smgr, ICameraSceneNode* camera, position2di mousePos, ISceneNode* mapNode, vector3df& intersection)
 {
@@ -51,29 +61,26 @@ bool getMouseWorldPosition(ISceneManager* smgr, ICameraSceneNode* camera, positi
         IDFlag_IsPickable,
         0);
 
-    // NEW CHECK: See if the hitNode or any of its parents is the mapNode
     const ISceneNode* node = hitNode;
     while (node)
     {
         if (node == mapNode)
         {
-            // Success! The ray hit the map or one of its children.
             return true;
         }
-        node = node->getParent(); // Move up to the parent
+        node = node->getParent();
     }
 
-    // The ray hit nothing, or it hit something that isn't part of the mapNode hierarchy
     return false;
 }
 
 int main() {
     /*=========================================================
     IRRLICHT SETUP
-    =========================================================k*/
+    =========================================================*/
     InputEventListener receiver;
     IrrlichtDevice* device = createDevice(
-        video::EDT_OPENGL, // Use OpenGL
+        video::EDT_OPENGL,
         dimension2d<u32>(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT),
         32, false, false, false, &receiver);
 
@@ -81,230 +88,397 @@ int main() {
         std::cerr << "Failed to create Irrlicht device!" << std::endl;
         return 1;
     }
-    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Top Down View");
+    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Tiled NavMesh");
 
     IVideoDriver* driver = device->getVideoDriver();
     ISceneManager* smgr = device->getSceneManager();
     IGUIEnvironment* guienv = device->getGUIEnvironment();
 
+    /*=========================================================
+    CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
+    =========================================================*/
+    float cameraDistance = 15.0f;
+    float cameraAngleH = 0.0f;
+    float cameraAngleV = 45.0f;
+    const float cameraRotationSpeed = 0.3f;
+
+    ICameraSceneNode* camera = smgr->addCameraSceneNode();
+
+    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
+    camera->setAspectRatio(aspectRatio);
+    camera->setFOV(core::degToRad(60.0f));
+    camera->setNearValue(0.1f);
+    camera->setFarValue(1000.0f);
+
+    camera->setPosition(vector3df(0, 15, 0));
+    camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
-    LOAD MAP
-    =========================================================k*/
+    CUSTOM SHADER CALLBACK
+    =========================================================*/
+    class ShaderCallback : public video::IShaderConstantSetCallBack
+    {
+    private:
+        ISceneManager* smgr;
+
+    public:
+        ShaderCallback(ISceneManager* sceneManager) : smgr(sceneManager) {}
+
+        virtual void OnSetConstants(video::IMaterialRendererServices* services, s32 userData)
+        {
+            video::IVideoDriver* driver = services->getVideoDriver();
+
+            // 1. MATRICES (Correct - These belong in Vertex Shader)
+            core::matrix4 worldViewProj = driver->getTransform(video::ETS_PROJECTION);
+            worldViewProj *= driver->getTransform(video::ETS_VIEW);
+            worldViewProj *= driver->getTransform(video::ETS_WORLD);
+            services->setVertexShaderConstant("mWorldViewProj", worldViewProj.pointer(), 16);
+
+            core::matrix4 world = driver->getTransform(video::ETS_WORLD);
+            services->setVertexShaderConstant("mWorld", world.pointer(), 16);
+
+            // 2. LIGHT POSITION (CHANGE THIS)
+            f32 lightPos[3] = { 50.0f, 500.0f, 50.0f };
+            services->setPixelShaderConstant("mLightPos", lightPos, 3);
+
+            f32 ambientStrength = 0.2f;
+            services->setPixelShaderConstant("mAmbientStrength", &ambientStrength, 1);
+
+            f32 specularStrength = 0.1f;
+            services->setPixelShaderConstant("mSpecularStrength", &specularStrength, 1);
+
+            int textureUnit = 0;
+            services->setPixelShaderConstant("mTexture", &textureUnit, 1);
+        }
+    };
+
+    /*=========================================================
+    CUSTOM SHADER SETUP
+    =========================================================*/
+    ShaderCallback* shaderCallback = new ShaderCallback(smgr);
+
+    s32 materialType = 0;
+    std::string vertCode = readFile("assets/main.vert");
+    std::string fragCode = readFile("assets/main.frag");
+
+    if (vertCode.empty() || fragCode.empty())
+    {
+        std::cerr << "Failed to read shader files!" << std::endl;
+        materialType = EMT_SOLID;
+    }
+    else if (driver->queryFeature(video::EVDF_ARB_GLSL))
+    {
+        IGPUProgrammingServices* gpu = driver->getGPUProgrammingServices();
+
+        if (gpu)
+        {
+            materialType = gpu->addHighLevelShaderMaterial(
+                vertCode.c_str(), "main", video::EVST_VS_1_1,
+                fragCode.c_str(), "main", video::EPST_PS_1_1,
+                shaderCallback, video::EMT_SOLID, 0, video::EGSL_DEFAULT);
+
+            if (materialType == -1)
+            {
+                std::cerr << "Failed to create custom shader material!" << std::endl;
+                materialType = EMT_SOLID;
+            }
+            else
+            {
+                std::cout << "Custom Unreal-style shader loaded successfully! Material type: " << materialType << std::endl;
+            }
+        }
+    }
+    else
+    {
+        std::cerr << "GLSL not supported, using default material" << std::endl;
+        materialType = EMT_SOLID;
+    }
+
+    /*=========================================================
+                           NAVMESH SETUP
+     ----------------------------------------------------------
+    * =========================================================*/
+
+    /*=========================================================
+    1. LOAD MAP
+    =========================================================*/
     scene::ISceneCollisionManager* levelCollisionManager = nullptr;
-    IAnimatedMesh* mapMesh = smgr->getMesh("assets/test_map_2.obj");
+    IAnimatedMesh* mapMesh = smgr->getMesh("assets/example_level/example_level.obj");
     if (!mapMesh) {
-        std::cerr << "Failed to load level mesh: assets/test_map_2.obj" << std::endl;
+        std::cerr << "Failed to load level mesh: assets/example_level/example_level.obj" << std::endl;
         device->drop();
         return 1;
     }
     IMeshSceneNode* mapNode = smgr->addMeshSceneNode(mapMesh->getMesh(0));
 
     if (mapNode) {
-        mapNode->setMaterialFlag(EMF_LIGHTING, false);
-        mapNode->setMaterialFlag(EMF_WIREFRAME, false); // Show map solid
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setID(IDFlag_IsPickable);
         mapNode->setVisible(true);
 
+        std::cout << "Map node material count: " << mapNode->getMaterialCount() << std::endl;
+
+        for (u32 i = 0; i < mapNode->getMaterialCount(); i++)
+        {
+            SMaterial& mat = mapNode->getMaterial(i);
+            mat.MaterialType = (E_MATERIAL_TYPE)materialType;
+            mat.Lighting = false;
+            mat.Wireframe = false;
+        }
+
+        std::cout << "Map node material type set to: " << materialType << std::endl;
+
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
             mapNode->getMesh(), mapNode, 128
         );
-
-        if (!selector) {
-			std::cerr << "Failed to create triangle selector for level mesh!" << std::endl;
-            device->drop();
-            return 1;
-        }
-
         if (selector) {
             mapNode->setTriangleSelector(selector);
-            selector->drop(); // The node now holds a reference, so we can drop ours
+            selector->drop();
             levelCollisionManager = smgr->getSceneCollisionManager();
-            std::cout << "Triangle selector set successfully." << std::endl; // Debug message
-        }
-        else {
-            std::cerr << "Failed to create triangle selector!" << std::endl; // Debug message
+            std::cout << "Triangle selector set successfully." << std::endl;
         }
     }
 
     /*=========================================================
-    BUILD NAVMESH
-    =========================================================k*/
-    StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
-    NavMeshParams params; // Use default params from StaticNavMesh.h
+    2. CREATE AND BUILD TILED NAVMESH
+    =========================================================*/
+    // a. Initialize TiledNavMesh
+    TiledNavMesh* navMesh = new TiledNavMesh(smgr->getRootSceneNode(), smgr);
 
-    std::cout << "Building navmesh..." << std::endl;
-    bool success = navMesh->build(mapNode, params);
+    // b. Create a NavMeshParams struct. 
+    //    You can change the parameters to suit the map and agent requirements. 
+    NavMeshParams params;
+    params.CellSize = 0.15f;
+    params.CellHeight = 0.2f;
+    params.AgentHeight = 0.8f;
+    params.AgentRadius = 0.4f;
+    params.AgentMaxClimb = 0.6f;
+    params.AgentMaxSlope = 45.f;
+    params.RegionMinSize = 8.f;
+    params.RegionMergeSize = 20.f;
+    params.EdgeMaxError = 1.3f;
+    params.EdgeMaxLen = 12.f;
+    params.VertsPerPoly = 6;
+    params.DetailSampleDist = 6.0f;
+    params.DetailSampleMaxError = 1.0f;
+    params.KeepInterResults = true; // Required for debug visualization
 
+    // c. Define tile size (in cells)
+    const int tileSize = 64;
+
+    // d. Build the tiled navmesh from your mesh node, NavMeshParams, and tile size
+    bool success = navMesh->build(mapNode, params, tileSize);
+
+    if (!success) {
+        std::cerr << "Initial tiled navmesh build failed!" << std::endl;
+        return 1;
+    }
+
+    /*=========================================================
+    2.a RENDER NAVMESH (OPTIONAL DEBUG VISUALIZATION)
+    =========================================================*/
+
+    ISceneNode* debugNavMeshNode = nullptr;
+    debugNavMeshNode = navMesh->renderNavMesh();
+    if (debugNavMeshNode) {
+        debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+        debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+        debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255); // Cyan-ish
+    }
+
+    /*=========================================================
+    3. ADD PLAYER AGENT
+    =========================================================*/
     ISceneNode* playerNode = nullptr;
     int playerId = -1;
-    std::vector<int> followerIds;
-    vector3df lastPlayerPos(0, 0, 0);
+    vector3df initialPlayerPos(5, 1, 5);
 
-    if (success) {
-        std::cout << "Navmesh built successfully! Build time: " << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
+    playerNode = smgr->addSphereSceneNode(params.AgentRadius);
+    playerNode->setMaterialFlag(EMF_LIGHTING, false);
+    playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
+    playerNode->setPosition(initialPlayerPos);
+    playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
 
-        /*=========================================================
-        RENDER NAVMESH
-        =========================================================k*/
-        ISceneNode* debugNavMeshNode = navMesh->renderNavMesh();
-        if (debugNavMeshNode) {
-            debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-            debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-            debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 0, 255); // Blue
+    /*=========================================================
+    GUI SETUP WITH BUILD CALLBACK
+    =========================================================*/
+    NavMeshGUI* navMeshGui = new NavMeshGUI(guienv);
+    navMeshGui->Load(windowWidth, windowHeight);
+
+    receiver.setGUIEnvironment(guienv);
+    receiver.setNavMeshGUI(navMeshGui);
+
+    navMeshGui->setBuildCallback([&]() {
+        f32 cellSize = navMeshGui->getSliderValue("CellSize");
+
+        // Don't manually remove it - let the TiledNavMesh::build() handle cleanup
+        debugNavMeshNode = nullptr;
+
+        NavMeshParams params;
+
+        // 1. Rasterization
+        params.CellSize = navMeshGui->getSliderValue("CellSize");
+        params.CellHeight = navMeshGui->getSliderValue("CellHeight");
+
+        // 2. Agent Properties
+        params.AgentHeight = navMeshGui->getSliderValue("AgentHeight");
+        params.AgentRadius = navMeshGui->getSliderValue("AgentRadius");
+        params.AgentMaxClimb = navMeshGui->getSliderValue("AgentMaxClimb");
+        params.AgentMaxSlope = navMeshGui->getSliderValue("AgentMaxSlope");
+
+        // 3. Region / Filtering
+        params.RegionMinSize = navMeshGui->getSliderValue("RegionMinSize");
+        params.RegionMergeSize = navMeshGui->getSliderValue("RegionMergeSize");
+
+        // 4. Polygonization
+        params.EdgeMaxLen = navMeshGui->getSliderValue("EdgeMaxLen");
+        params.EdgeMaxError = navMeshGui->getSliderValue("EdgeMaxError");
+        params.VertsPerPoly = navMeshGui->getSliderValue("VertsPerPoly");
+
+        // 5. Detail Mesh
+        params.DetailSampleDist = navMeshGui->getSliderValue("DetailSampleDist");
+        params.DetailSampleMaxError = navMeshGui->getSliderValue("DetailSampleMaxError");
+
+        // Required for debug visualization
+        params.KeepInterResults = true;
+
+        std::cout << "Re-building tiled navmesh..." << std::endl;
+        bool success = navMesh->build(mapNode, params, tileSize);
+
+        if (success) {
+            std::cout << "Tiled NavMesh built successfully! Build time: "
+                << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
+
+            // Create new debug visualization
+            debugNavMeshNode = nullptr;
+            debugNavMeshNode = navMesh->renderNavMesh();
+            if (debugNavMeshNode) {
+                debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
+                debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
+                debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255);
+            }
+
+            // Add player node to navmesh agent list
+            playerNode->setScale(vector3df(params.AgentRadius * 2, params.AgentRadius * 2, params.AgentRadius * 2));
+            playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
         }
+        else {
+            std::cout << "Tiled NavMesh build failed!" << std::endl;
+        }
+        });
 
-        /*=========================================================
-        PLAYER AGENT
-        =========================================================k*/
-        playerNode = smgr->addSphereSceneNode(params.AgentRadius);
-        playerNode->setMaterialFlag(EMF_LIGHTING, false);
-        playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
-        vector3df initialPlayerPos(5, 1, 5);
-        playerNode->setPosition(initialPlayerPos);
-        playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
-
-    }
-    else {
-        std::cerr << "FATAL: Failed to build navmesh!" << std::endl;
-    }
-
-    /*=========================================================
-    CAMERA
-    =========================================================k*/
-    ICameraSceneNode* camera = smgr->addCameraSceneNode(
-        0,
-        vector3df(0, 8, 0),   // Position
-        vector3df(0, 0, 0),   // Look-at target
-        -1,                   // ID
-        true                  // Use orthographic camera
-    );
-
-    // Calculate aspect ratio to fix stretching
-    const f32 aspectRatio = (f32)windowWidth / (f32)windowHeight;
-
-    // Define the *vertical* size of the view.
-    // The horizontal size will be calculated from this.
-    const f32 orthoViewHeight = 20.0f; // e.g., our view is 20 units tall
-    const f32 orthoViewWidth = orthoViewHeight * aspectRatio; // Calculate width to match aspect ratio
-
-    core::matrix4 orthoMatrix;
-    orthoMatrix.buildProjectionMatrixOrthoLH(
-        orthoViewWidth,         // Calculated Width
-        orthoViewHeight,        // Fixed Height
-        camera->getNearValue(), // Near clip plane
-        camera->getFarValue()   // Far clip plane
-    );
-    camera->setProjectionMatrix(orthoMatrix, true); // 'true' for orthographic
-
-    /*=========================================================
-    GUI
-    =========================================================k*/
-    IGUIStaticText* stats = guienv->addStaticText(L"", rect<s32>(10, 10, 400, 30));
-    stats->setOverrideColor(SColor(255, 255, 255, 255));
+    navMeshGui->setShowNavmeshCallback([&](bool show) {
+        if (debugNavMeshNode) {
+            if (show) {
+                debugNavMeshNode->setVisible(true);
+            }
+            else {
+                debugNavMeshNode->setVisible(false);
+            }
+        }
+        });
 
     /*=========================================================
     MAIN LOOP
-    =========================================================k*/
+    =========================================================*/
     u32 then = device->getTimer()->getTime();
 
     while (device->run()) {
-        // Delta time
         u32 now = device->getTimer()->getTime();
         float deltaTime = (float)(now - then) / 1000.0f;
         then = now;
 
         navMesh->update(deltaTime);
 
-        // --- Input ---
+        /*--------------------------------------------------------
+        ESC KEY (EXIT)
+        --------------------------------------------------------*/
         if (receiver.IsKeyDown(KEY_ESCAPE))
         {
             break;
         }
 
-        // Player mouse click
+        /*--------------------------------------------------------
+        RIGHT-CLICK CAMERA ROTATION
+        --------------------------------------------------------*/
+        if (receiver.IsRightMouseDown()) {
+            position2di dragDelta = receiver.getMouseDragDelta();
+
+            cameraAngleH -= dragDelta.X * cameraRotationSpeed;
+            cameraAngleV -= dragDelta.Y * cameraRotationSpeed;
+
+            if (cameraAngleV < 5.0f) cameraAngleV = 5.0f;
+            if (cameraAngleV > 89.0f) cameraAngleV = 89.0f;
+        }
+
+        /*--------------------------------------------------------
+        LEFT-CLICK MOVE PLAYER
+        --------------------------------------------------------*/
         if (success && receiver.wasMouseClicked()) {
             position2di mousePos = receiver.getMousePos();
 
-            std::cout << "Mouse clicked at: " << mousePos.X << ", " << mousePos.Y << std::endl;
-
             core::line3d<f32> ray = smgr->getSceneCollisionManager()->getRayFromScreenCoordinates(
-                mousePos,
-                camera
-            );
+                mousePos, camera);
 
             core::vector3df intersectionPoint;
             core::triangle3df hitTriangle;
 
             scene::ISceneNode* selectedSceneNode =
                 levelCollisionManager->getSceneNodeAndCollisionPointFromRay(
-                    ray,
-                    intersectionPoint, // This will be the position of the collision
-                    hitTriangle, // This will be the triangle hit in the collision
-                    IDFlag_IsPickable, // This ensures that only nodes that we have
-                    // set up to be pickable are considered
-                    0); // Check the entire scene
+                    ray, intersectionPoint, hitTriangle, IDFlag_IsPickable, 0);
 
-            if (selectedSceneNode) {
-                // 5. Check if the node we hit was the levelNode
-                //    (This is technically optional if it's your only pickable node)
-                if (selectedSceneNode == mapNode) {
-                    std::cout << "Mouse clicked mesh at: "
-                        << intersectionPoint.X << ", "
-                        << intersectionPoint.Y << ", "
-                        << intersectionPoint.Z << std::endl;
+            if (selectedSceneNode && selectedSceneNode == mapNode) {
+                std::cout << "Mouse clicked mesh at: "
+                    << intersectionPoint.X << ", "
+                    << intersectionPoint.Y << ", "
+                    << intersectionPoint.Z << std::endl;
 
-                    if (playerId != -1) {
-                        navMesh->setAgentTarget(playerId, intersectionPoint);
-                    }
+                if (playerId != -1) {
+                    navMesh->setAgentTarget(playerId, intersectionPoint);
                 }
-            }
-            else {
-                // The ray didn't hit any node *flagged as pickable*
-                std::cout << "Mouse ray missed all pickable nodes." << std::endl;
             }
         }
 
-		// Camera follow player
+        /*--------------------------------------------------------
+        UPDATE SHADER UNIFORMS
+        --------------------------------------------------------*/
+        // Shader uniforms are automatically handled by Irrlicht
+        // through the material properties and light settings
+
+        /*--------------------------------------------------------
+        CAMERA FOLLOW PLAYER
+        --------------------------------------------------------*/
         if (success && playerNode) {
             vector3df playerPos = playerNode->getPosition();
 
-            // For an orthographic top-down camera, just move the camera position
-            // to center on the player's X and Z coordinates
-            camera->setPosition(vector3df(playerPos.X, 8.0f, playerPos.Z));
-            camera->setTarget(vector3df(playerPos.X, 0.0f, playerPos.Z));
+            float angleHRad = core::degToRad(cameraAngleH);
+            float angleVRad = core::degToRad(cameraAngleV);
+
+            float x = playerPos.X + cameraDistance * sin(angleVRad) * cos(angleHRad);
+            float y = playerPos.Y + cameraDistance * cos(angleVRad);
+            float z = playerPos.Z + cameraDistance * sin(angleVRad) * sin(angleHRad);
+
+            camera->setPosition(vector3df(x, y, z));
+            camera->setTarget(playerPos);
         }
 
         // --- Render ---
-        driver->beginScene(true, true, SColor(255, 20, 20, 30));
+        driver->beginScene(true, true, SColor(255, 30, 35, 45)); // Darker, cooler background
 
         smgr->drawAll();
 
-        // Render agent debug paths
         if (success) {
             navMesh->renderAgentPaths(driver);
         }
 
         guienv->drawAll();
         driver->endScene();
-
-        // Update stats
-        stringw str = L"FPS: "; str += driver->getFPS();
-        str += L" | Tris: "; str += driver->getPrimitiveCountDrawn();
-        if (success) {
-            str += L" | Agents: "; str += (int)followerIds.size() + 1;
-        }
-        else {
-            str += L" | NAVMESH BUILD FAILED";
-        }
-        stats->setText(str.c_str());
     }
 
-    // 10. Cleanup
     if (navMesh)
-        navMesh->drop(); // It's an ISceneNode, so drop it
+        navMesh->drop();
 
     device->drop();
+
     return 0;
 }

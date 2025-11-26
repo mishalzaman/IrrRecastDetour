@@ -406,7 +406,6 @@ ISceneNode* TiledNavMesh::renderNavMesh()
     // Create a new parent node
     _naviDebugParent = SceneManager->addEmptySceneNode(this);
     _naviDebugParent->setName("NavMeshDebugNode_Parent");
-    _naviDebugParent->setVisible(true);
 
 
     int i = 0;
@@ -438,6 +437,8 @@ ISceneNode* TiledNavMesh::renderNavMesh()
 
         smesh->drop();
     }
+
+    this->setVisible(true);
 
     return _naviDebugParent;
 }

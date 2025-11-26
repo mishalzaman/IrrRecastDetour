@@ -48,6 +48,10 @@ public:
      */
     irr::scene::ISceneNode* renderNavMesh();
 
+    /**
+     * @brief Gets the total time in milliseconds for the last successful build.
+     */
+    float getTotalBuildTimeMs() const { return _totalBuildTimeMs; }
 
 private:
     // --- Recast Build Context ---
