@@ -81,7 +81,7 @@ int main() {
     InputEventListener receiver;
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL,
-        dimension2d<u32>(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT),
+        dimension2d<u32>(windowWidth, windowHeight),
         32, false, false, false, &receiver);
 
     if (!device) {
