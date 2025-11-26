@@ -98,7 +98,7 @@ private:
     );
 
     // (Helper functions for creating Irrlicht debug geometry)
-    bool _setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh);
+    bool _setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh, irr::video::SColor color);    
     bool _getMeshDataFromPolyMeshDetail
     (
         rcPolyMeshDetail* dmesh,
@@ -109,6 +109,7 @@ private:
     (
         irr::scene::SMeshBuffer& buffer,
         const std::vector<float>& verts, int& nverts,
-        const std::vector<int>& tris, int& ntris
+        const std::vector<int>& tris, int& ntris,
+        irr::video::SColor color
     );
 };

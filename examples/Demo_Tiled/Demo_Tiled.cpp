@@ -264,7 +264,7 @@ int main() {
     params.KeepInterResults = true; // Required for debug visualization
 
     // c. Define tile size (in cells)
-    const int tileSize = 64;
+    const int tileSize = 32;
 
     // d. Build the tiled navmesh from your mesh node, NavMeshParams, and tile size
     bool success = navMesh->build(mapNode, params, tileSize);

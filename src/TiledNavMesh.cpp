@@ -407,14 +407,16 @@ ISceneNode* TiledNavMesh::renderNavMesh()
     _naviDebugParent = SceneManager->addEmptySceneNode(this);
     _naviDebugParent->setName("NavMeshDebugNode_Parent");
 
-
     int i = 0;
     for (const auto& dmesh : _tileDMeshes)
     {
         if (!dmesh) continue;
 
+        irr::video::SColor tileColor(255, (i * 37) % 255, (i * 173) % 255, (i * 89) % 255);
+
         irr::scene::SMesh* smesh = new irr::scene::SMesh();
-        if (!_setupIrrSMeshFromRecastDetailMesh(smesh, dmesh.get()))
+
+        if (!_setupIrrSMeshFromRecastDetailMesh(smesh, dmesh.get(), tileColor))
         {
             _ctx->log(RC_LOG_WARNING, "Failed to setup debug mesh for a tile.");
             smesh->drop();
@@ -427,7 +429,7 @@ ISceneNode* TiledNavMesh::renderNavMesh()
         if (tileNode)
         {
             char name[64];
-            snprintf(name, 64, "NavMeshDebugTile_%d", i++);
+            snprintf(name, 64, "NavMeshDebugTile_%d", i);
             tileNode->setName(name);
             tileNode->setMaterialFlag(irr::video::EMF_LIGHTING, false);
             tileNode->setMaterialFlag(irr::video::EMF_WIREFRAME, true);
@@ -436,6 +438,7 @@ ISceneNode* TiledNavMesh::renderNavMesh()
         }
 
         smesh->drop();
+        i++; // Increment index
     }
 
     this->setVisible(true);
@@ -514,7 +517,7 @@ bool TiledNavMesh::_getMeshBufferData(IMeshSceneNode* node)
     return true;
 }
 
-bool TiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh)
+bool TiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh, irr::video::SColor color)
 {
     if (!smesh || !dmesh)
         return false;
@@ -531,7 +534,7 @@ bool TiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, 
         return false;
     }
 
-    if (!_setMeshBufferData(*buffer, vertsOut, nvertsOut, trisOut, ntrisOut))
+    if (!_setMeshBufferData(*buffer, vertsOut, nvertsOut, trisOut, ntrisOut, color))
     {
         buffer->drop();
         return false;
@@ -585,7 +588,9 @@ bool TiledNavMesh::_getMeshDataFromPolyMeshDetail(
 bool TiledNavMesh::_setMeshBufferData(
     irr::scene::SMeshBuffer& buffer,
     const std::vector<float>& verts, int& nverts,
-    const std::vector<int>& tris, int& ntris)
+    const std::vector<int>& tris, int& ntris,
+    irr::video::SColor color
+)
 {
     if (verts.empty() || tris.empty())
     {
@@ -603,7 +608,7 @@ bool TiledNavMesh::_setMeshBufferData(
             verts[i * 3 + 1],
             verts[i * 3 + 2],
             0.0f, 1.0f, 0.0f, // Normal
-            irr::video::SColor(255, 0, 255, 0),
+            color,            
             0.0f, 0.0f        // TCoords
         );
     }
