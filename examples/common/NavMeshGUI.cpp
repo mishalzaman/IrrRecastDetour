@@ -6,7 +6,15 @@ NavMeshGUI::NavMeshGUI(IGUIEnvironment* guienv) :
     _mainPanel(nullptr),
     _buildButton(nullptr),
     _showNavmeshCheckbox(nullptr),
-    _nextSliderID(1000)
+    _nextSliderID(1000),
+    // Initialize layout vars to defaults (will be overwritten in Load)
+    _margin(BASE_MARGIN),
+    _labelWidth(BASE_LABEL_WIDTH),
+    _sliderWidth(BASE_SLIDER_WIDTH),
+    _valueWidth(BASE_VALUE_WIDTH),
+    _rowHeight(BASE_ROW_HEIGHT),
+    _rowSpacing(BASE_ROW_SPACING),
+    _scaleFactor(1.0f)
 {
     irr::gui::IGUISkin* skin = _guienv->getSkin();
 
@@ -26,10 +34,25 @@ NavMeshGUI::~NavMeshGUI()
 
 void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
 {
+    _scaleFactor = (f32)windowHeight / 720.0f;
+
+    if (_scaleFactor < 0.5f) _scaleFactor = 0.5f;
+
+    _margin = (s32)(BASE_MARGIN * _scaleFactor);
+    _labelWidth = (s32)(BASE_LABEL_WIDTH * _scaleFactor);
+    _sliderWidth = (s32)(BASE_SLIDER_WIDTH * _scaleFactor);
+    _valueWidth = (s32)(BASE_VALUE_WIDTH * _scaleFactor);
+    _rowHeight = (s32)(BASE_ROW_HEIGHT * _scaleFactor);
+    _rowSpacing = (s32)(BASE_ROW_SPACING * _scaleFactor);
+
+    s32 padding = (s32)(5 * _scaleFactor);
+    s32 extraPadding = (s32)(14 * _scaleFactor);
+    _panelWidth = _margin * 2 + _labelWidth + padding + _sliderWidth + padding + _valueWidth + extraPadding;
+
     _creatPanel(windowWidth, windowHeight);
 
     // Starting Y position for sliders
-    s32 yPos = 20;
+    s32 yPos = (s32)(20 * _scaleFactor);
 
     // 1. Rasterization
     _addSlider("CellSize", L"Cell Size:", 0.05f, 1.0f, 0.15f, yPos);
@@ -55,22 +78,26 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
     _addSlider("DetailSampleMaxError", L"Det Sample Err:", 0.0f, 5.0f, 1.0f, yPos);
 
     // Add some spacing before controls
-    yPos += ROW_SPACING;
+    yPos += _rowSpacing;
 
     // Add Show Navmesh checkbox
+    s32 checkboxHeight = (s32)(25 * _scaleFactor);
+    s32 checkboxWidth = (s32)(200 * _scaleFactor);
     _showNavmeshCheckbox = _guienv->addCheckBox(
         true, // initially unchecked
-        rect<s32>(MARGIN, yPos, MARGIN + 200, yPos + 25),
+        rect<s32>(_margin, yPos, _margin + checkboxWidth, yPos + checkboxHeight),
         _mainPanel,
         SHOW_NAVMESH_CHECKBOX_ID,
         L"Show Navmesh"
     );
 
-    yPos += 35; // spacing after checkbox
+    yPos += (s32)(35 * _scaleFactor); // spacing after checkbox
 
     // Add Build button
+    s32 btnHeight = (s32)(30 * _scaleFactor);
+    s32 btnWidth = (s32)(150 * _scaleFactor);
     _buildButton = _guienv->addButton(
-        rect<s32>(MARGIN, yPos, MARGIN + 150, yPos + 30),
+        rect<s32>(_margin, yPos, _margin + btnWidth, yPos + btnHeight),
         _mainPanel,
         BUILD_BUTTON_ID,
         L"Build NavMesh"
@@ -79,8 +106,7 @@ void NavMeshGUI::Load(u32 windowWidth, u32 windowHeight)
 
 void NavMeshGUI::_creatPanel(u32 windowWidth, u32 windowHeight)
 {
-    const s32 panelWidth = 364;
-    const s32 panelX = windowWidth - panelWidth;
+    const s32 panelX = windowWidth - _panelWidth;
 
     // Create the main panel background (using IGUIStaticText for styling)
     _mainPanel = _guienv->addStaticText(
@@ -109,24 +135,25 @@ void NavMeshGUI::_addSlider(const stringc& name, const wchar_t* labelText,
     control.maxValue = maxValue;
     control.id = _nextSliderID++;
 
-    s32 currentX = MARGIN;
+    s32 currentX = _margin;
+    s32 padding = (s32)(5 * _scaleFactor);
 
     // Create label
     control.label = _guienv->addStaticText(
         labelText,
-        rect<s32>(currentX, yPos, currentX + LABEL_WIDTH, yPos + ROW_HEIGHT),
+        rect<s32>(currentX, yPos, currentX + _labelWidth, yPos + _rowHeight),
         false,
         false,
         _mainPanel
     );
     control.label->setOverrideColor(SColor(255, 200, 200, 200));
 
-    currentX += LABEL_WIDTH + 5;
+    currentX += _labelWidth + padding;
 
     // Create slider
     control.slider = _guienv->addScrollBar(
         true, // horizontal
-        rect<s32>(currentX, yPos, currentX + SLIDER_WIDTH, yPos + ROW_HEIGHT),
+        rect<s32>(currentX, yPos, currentX + _sliderWidth, yPos + _rowHeight),
         _mainPanel,
         control.id
     );
@@ -141,12 +168,12 @@ void NavMeshGUI::_addSlider(const stringc& name, const wchar_t* labelText,
     control.slider->setSmallStep(1);
     control.slider->setLargeStep(50);
 
-    currentX += SLIDER_WIDTH + 5;
+    currentX += _sliderWidth + padding;
 
     // Create value display
     control.valueDisplay = _guienv->addStaticText(
         L"",
-        rect<s32>(currentX, yPos, currentX + VALUE_WIDTH, yPos + ROW_HEIGHT),
+        rect<s32>(currentX, yPos, currentX + _valueWidth, yPos + _rowHeight),
         false,
         false,
         _mainPanel
@@ -161,7 +188,7 @@ void NavMeshGUI::_addSlider(const stringc& name, const wchar_t* labelText,
     _updateSliderValueDisplay(name);
 
     // Move Y position down for next slider
-    yPos += ROW_HEIGHT + ROW_SPACING;
+    yPos += _rowHeight + _rowSpacing;
 }
 
 void NavMeshGUI::_updateSliderValueDisplay(const stringc& name)

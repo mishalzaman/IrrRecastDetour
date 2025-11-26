@@ -54,13 +54,24 @@ private:
 
     s32 _nextSliderID;
 
-    // Layout constants
-    static const s32 MARGIN = 10;
-    static const s32 LABEL_WIDTH = 130;
-    static const s32 SLIDER_WIDTH = 140;
-    static const s32 VALUE_WIDTH = 60;
-    static const s32 ROW_HEIGHT = 20;
-    static const s32 ROW_SPACING = 10;
+    // --- [UPDATED] Layout Variables ---
+    // We store scaled values here calculated during Load()
+    s32 _margin;
+    s32 _labelWidth;
+    s32 _sliderWidth;
+    s32 _valueWidth;
+    s32 _rowHeight;
+    s32 _rowSpacing;
+    s32 _panelWidth;
+    f32 _scaleFactor;
+
+    // Base constants (Reference design for 720p)
+    static const s32 BASE_MARGIN = 10;
+    static const s32 BASE_LABEL_WIDTH = 130;
+    static const s32 BASE_SLIDER_WIDTH = 140;
+    static const s32 BASE_VALUE_WIDTH = 60;
+    static const s32 BASE_ROW_HEIGHT = 20;
+    static const s32 BASE_ROW_SPACING = 10;
     static const s32 BUILD_BUTTON_ID = 9999;
     static const s32 SHOW_NAVMESH_CHECKBOX_ID = 9998;
 };
