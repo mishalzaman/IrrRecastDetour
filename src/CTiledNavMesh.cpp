@@ -1,4 +1,4 @@
-#include "IrrRecastDetour/TiledNavMesh.h"
+#include "IrrRecastDetour/CTiledNavMesh.h"
 #include <irrlicht.h>
 
 // Use explicit namespaces
@@ -7,8 +7,11 @@ using irr::core::matrix4;
 using irr::scene::ISceneNode;
 using irr::scene::IMeshSceneNode;
 
-TiledNavMesh::TiledNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
-    : AbstractNavMesh(parent, mgr, id), // Call the base constructor
+using namespace irr;
+using namespace scene;
+
+CTiledNavMesh::CTiledNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
+    : INavMesh(parent, mgr, id), // Call the base constructor
     _ctx(new rcContext(true)), // true = enable logging
     _nverts(0),
     _ntris(0),
@@ -16,7 +19,7 @@ TiledNavMesh::TiledNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneMan
 {
 }
 
-TiledNavMesh::~TiledNavMesh()
+CTiledNavMesh::~CTiledNavMesh()
 {
     // All smart pointers handle their own cleanup.
     if (_naviDebugParent)
@@ -25,7 +28,7 @@ TiledNavMesh::~TiledNavMesh()
     }
 }
 
-bool TiledNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params, const int tileSize)
+bool CTiledNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params, const int tileSize)
 {
     if (!levelNode)
     {
@@ -165,7 +168,7 @@ bool TiledNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params,
 }
 
 
-unsigned char* TiledNavMesh::_buildTile(
+unsigned char* CTiledNavMesh::_buildTile(
     const int tx, const int ty,
     const float* bmin, const float* bmax,
     int& dataSize)
@@ -382,7 +385,7 @@ unsigned char* TiledNavMesh::_buildTile(
     return nullptr;
 }
 
-ISceneNode* TiledNavMesh::renderNavMesh()
+ISceneNode* CTiledNavMesh::renderNavMesh()
 {
     if (!SceneManager)
     {
@@ -449,7 +452,7 @@ ISceneNode* TiledNavMesh::renderNavMesh()
 
 // --- Private Helper Functions (Copied from StaticNavMesh) ---
 
-bool TiledNavMesh::_getMeshBufferData(IMeshSceneNode* node)
+bool CTiledNavMesh::_getMeshBufferData(IMeshSceneNode* node)
 {
     if (!node) return false;
     irr::scene::IMesh* mesh = node->getMesh();
@@ -517,7 +520,7 @@ bool TiledNavMesh::_getMeshBufferData(IMeshSceneNode* node)
     return true;
 }
 
-bool TiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh, irr::video::SColor color)
+bool CTiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, rcPolyMeshDetail* dmesh, irr::video::SColor color)
 {
     if (!smesh || !dmesh)
         return false;
@@ -547,7 +550,7 @@ bool TiledNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh, 
     return true;
 }
 
-bool TiledNavMesh::_getMeshDataFromPolyMeshDetail(
+bool CTiledNavMesh::_getMeshDataFromPolyMeshDetail(
     rcPolyMeshDetail* dmesh,
     std::vector<float>& vertsOut, int& nvertsOut,
     std::vector<int>& trisOut, int& ntrisOut)
@@ -585,7 +588,7 @@ bool TiledNavMesh::_getMeshDataFromPolyMeshDetail(
     return true;
 }
 
-bool TiledNavMesh::_setMeshBufferData(
+bool CTiledNavMesh::_setMeshBufferData(
     irr::scene::SMeshBuffer& buffer,
     const std::vector<float>& verts, int& nverts,
     const std::vector<int>& tris, int& ntris,

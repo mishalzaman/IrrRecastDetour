@@ -1,7 +1,7 @@
 #include <irrlicht.h>
 #include <iostream>
 #include <vector>
-#include <IrrRecastDetour/StaticNavMesh.h>
+#include <IrrRecastDetour/CStaticNavMesh.h>
 
 #include <fstream>
 #include <sstream>
@@ -243,7 +243,7 @@ int main() {
     2. CREATE AND BUILD NAVMESH
     =========================================================*/
 	// a. Initialize StaticNavMesh and.
-    StaticNavMesh* navMesh = new StaticNavMesh(smgr->getRootSceneNode(), smgr);
+    CStaticNavMesh* navMesh = new CStaticNavMesh(smgr->getRootSceneNode(), smgr);
 
     // b. Create a NavMeshParams struct. 
     //    You can change the parameters to suit the map and agent requirements. 
