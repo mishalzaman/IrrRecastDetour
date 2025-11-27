@@ -1,4 +1,4 @@
-#include "IrrRecastDetour/StaticNavMesh.h"
+#include "IrrRecastDetour/CStaticNavMesh.h"
 #include <irrlicht.h> // For Irrlicht types
 
 // Use explicit namespaces
@@ -7,8 +7,8 @@ using irr::core::matrix4;
 using irr::scene::ISceneNode;
 using irr::scene::IMeshSceneNode;
 
-StaticNavMesh::StaticNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
-    : AbstractNavMesh(parent, mgr, id), // Call the base constructor
+CStaticNavMesh::CStaticNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
+    : INavMesh(parent, mgr, id), // Call the base constructor
     _ctx(new rcContext()),
     _totalBuildTimeMs(0.0f)
 {
@@ -16,12 +16,12 @@ StaticNavMesh::StaticNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneM
     // _ctx is initialized in the member initializer list above.
 }
 
-StaticNavMesh::~StaticNavMesh()
+CStaticNavMesh::~CStaticNavMesh()
 {
     // All smart pointers handle their own cleanup.
 }
 
-bool StaticNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
+bool CStaticNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params)
 {
     if (!levelNode)
     {
@@ -357,7 +357,7 @@ bool StaticNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& params
     return true;
 }
 
-ISceneNode* StaticNavMesh::renderNavMesh()
+ISceneNode* CStaticNavMesh::renderNavMesh()
 {
     if (!SceneManager)
     {
@@ -407,7 +407,7 @@ ISceneNode* StaticNavMesh::renderNavMesh()
 
 // --- Private Helper Functions ---
 
-bool StaticNavMesh::_getMeshBufferData(
+bool CStaticNavMesh::_getMeshBufferData(
     IMeshSceneNode* node,
     std::vector<float>& verts,
     std::vector<int>& tris)
@@ -478,7 +478,7 @@ bool StaticNavMesh::_getMeshBufferData(
     return true;
 }
 
-bool StaticNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh)
+bool CStaticNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh)
 {
     rcPolyMeshDetail* dmesh = _dmesh.get();
     if (!smesh || !dmesh)
@@ -511,14 +511,14 @@ bool StaticNavMesh::_setupIrrSMeshFromRecastDetailMesh(irr::scene::SMesh* smesh)
     return true;
 }
 
-void StaticNavMesh::_showHeightFieldInfo(const rcHeightfield& hf)
+void CStaticNavMesh::_showHeightFieldInfo(const rcHeightfield& hf)
 {
     printf("rcHeightfield hf: w=%i,h=%i,bmin=(%f,%f,%f),bmax=(%f,%f,%f),cs=%f,ch=%f\n",
         hf.width, hf.height, hf.bmin[0], hf.bmin[1], hf.bmin[2],
         hf.bmax[0], hf.bmax[1], hf.bmax[2], hf.cs, hf.ch);
 }
 
-bool StaticNavMesh::_getMeshDataFromPolyMeshDetail(
+bool CStaticNavMesh::_getMeshDataFromPolyMeshDetail(
     rcPolyMeshDetail* dmesh,
     std::vector<float>& vertsOut, int& nvertsOut,
     std::vector<int>& trisOut, int& ntrisOut)
@@ -560,7 +560,7 @@ bool StaticNavMesh::_getMeshDataFromPolyMeshDetail(
     return true;
 }
 
-bool StaticNavMesh::_setMeshBufferData(
+bool CStaticNavMesh::_setMeshBufferData(
     irr::scene::SMeshBuffer& buffer,
     const std::vector<float>& verts, int& nverts,
     const std::vector<int>& tris, int& ntris)

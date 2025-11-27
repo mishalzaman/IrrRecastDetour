@@ -24,6 +24,10 @@ Version: 0.7.1
 #include "DetourNavMesh.h"
 #include "DetourCrowd.h"
 
+// Recast includes
+#include "Recast.h"
+#include "DetourNavMeshBuilder.h"
+
 // --- Custom Deleters for Detour objects ---
 struct DetourNavMeshDeleter {
     void operator()(dtNavMesh* navMesh) const { if (navMesh) dtFreeNavMesh(navMesh); }
@@ -33,6 +37,26 @@ struct DetourNavMeshQueryDeleter {
 };
 struct DetourCrowdDeleter {
     void operator()(dtCrowd* crowd) const { if (crowd) dtFreeCrowd(crowd); }
+};
+
+// --- Custom Deleters for Recast objects ---
+struct RecastContextDeleter {
+    void operator()(rcContext* ctx) const { delete ctx; }
+};
+struct RecastHeightfieldDeleter {
+    void operator()(rcHeightfield* hf) const { if (hf) rcFreeHeightField(hf); }
+};
+struct RecastCompactHeightfieldDeleter {
+    void operator()(rcCompactHeightfield* chf) const { if (chf) rcFreeCompactHeightfield(chf); }
+};
+struct RecastContourSetDeleter {
+    void operator()(rcContourSet* cset) const { if (cset) rcFreeContourSet(cset); }
+};
+struct RecastPolyMeshDeleter {
+    void operator()(rcPolyMesh* pmesh) const { if (pmesh) rcFreePolyMesh(pmesh); }
+};
+struct RecastPolyMeshDetailDeleter {
+    void operator()(rcPolyMeshDetail* dmesh) const { if (dmesh) rcFreePolyMeshDetail(dmesh); }
 };
 
 // --- Polygon Areas and Flags ---
@@ -56,7 +80,40 @@ enum class SamplePolyFlags : unsigned short
 };
 
 // Forward declaration for build parameters, which live in subclasses
-struct NavMeshParams;
+struct NavMeshParams
+{
+    // Cell size in world units
+    float CellSize = 0.3f;
+    // Cell height in world units
+    float CellHeight = 0.2f;
+
+    // Agent parameters
+    float AgentHeight = 2.0f;
+    float AgentRadius = 0.6f;
+    float AgentMaxClimb = 0.9f;
+    float AgentMaxSlope = 45.0f;
+
+    // Region parameters
+    float RegionMinSize = 8.0f;
+    float RegionMergeSize = 20.0f;
+
+    // Edge parameters
+    float EdgeMaxLen = 12.0f;
+    float EdgeMaxError = 1.3f;
+
+    // Polygon parameters
+    float VertsPerPoly = 6.0f;
+
+    // Detail mesh parameters
+    float DetailSampleDist = 6.0f;
+    float DetailSampleMaxError = 1.0f;
+
+    // Partitioning method
+    bool MonotonePartitioning = false;
+
+    // Keep intermediate results for debug rendering
+    bool KeepInterResults = false;
+};
 
 
 /**
@@ -73,20 +130,20 @@ struct NavMeshParams;
  */
 namespace irr {
     namespace scene {
-        class AbstractNavMesh : public irr::scene::ISceneNode
+        class INavMesh : public irr::scene::ISceneNode
         {
         public:
-            AbstractNavMesh(
+            INavMesh(
                 irr::scene::ISceneNode* parent,
                 irr::scene::ISceneManager* mgr,
                 irr::s32 id = -1
             );
 
-            virtual ~AbstractNavMesh();
+            virtual ~INavMesh();
 
             // Disable copy and move
-            AbstractNavMesh(const AbstractNavMesh&) = delete;
-            AbstractNavMesh& operator=(const AbstractNavMesh&) = delete;
+            INavMesh(const INavMesh&) = delete;
+            INavMesh& operator=(const INavMesh&) = delete;
 
             // --- ISceneNode Overrides ---
             virtual void OnRegisterSceneNode() override;

@@ -1,4 +1,4 @@
-#include "IrrRecastDetour/AbstractNavMesh.h"
+#include "IrrRecastDetour/INavMesh.h"
 #include <irrlicht.h>
 
 // Use explicit namespaces from original file
@@ -9,7 +9,7 @@ using irr::scene::ISceneNode;
 using namespace irr;
 using namespace scene;
 
-AbstractNavMesh::AbstractNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
+INavMesh::INavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
     : irr::scene::ISceneNode(parent, mgr, id),
     _defaultAgentRadius(0.2f), // Set some sane defaults
     _defaultAgentHeight(1.0f)
@@ -19,12 +19,12 @@ AbstractNavMesh::AbstractNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISc
     setVisible(false);
 }
 
-AbstractNavMesh::~AbstractNavMesh()
+INavMesh::~INavMesh()
 {
     // Smart pointers handle all cleanup automatically
 }
 
-void AbstractNavMesh::OnRegisterSceneNode()
+void INavMesh::OnRegisterSceneNode()
 {
     // Register children (like debug nodes added by subclasses)
     ISceneNode::OnRegisterSceneNode();
@@ -32,21 +32,21 @@ void AbstractNavMesh::OnRegisterSceneNode()
     // The abstract node itself doesn't render, so no need to register it.
 }
 
-void AbstractNavMesh::render()
+void INavMesh::render()
 {
     // This node does not render itself.
     // Agent path rendering is done from the main loop via renderAgentPaths().
     // Navmesh debug rendering is handled by the subclass.
 }
 
-const irr::core::aabbox3d<irr::f32>& AbstractNavMesh::getBoundingBox() const
+const irr::core::aabbox3d<irr::f32>& INavMesh::getBoundingBox() const
 {
     // This bounding box should be set by the subclass during its build()
     // to encompass the generated navigation mesh.
     return _box;
 }
 
-int AbstractNavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float height)
+int INavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float height)
 {
     dtCrowdAgentParams ap;
     memset(&ap, 0, sizeof(ap)); // Zero out the struct
@@ -59,7 +59,7 @@ int AbstractNavMesh::addAgent(irr::scene::ISceneNode* node, float radius, float 
     return this->addAgent(node, ap);
 }
 
-int AbstractNavMesh::addAgent(irr::scene::ISceneNode* node, const dtCrowdAgentParams& userParams)
+int INavMesh::addAgent(irr::scene::ISceneNode* node, const dtCrowdAgentParams& userParams)
 {
     if (!_crowd || !node)
     {
@@ -118,7 +118,7 @@ int AbstractNavMesh::addAgent(irr::scene::ISceneNode* node, const dtCrowdAgentPa
     return id;
 }
 
-void AbstractNavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
+void INavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
 {
     if (!_crowd || !_navQuery || agentId == -1)
     {
@@ -152,7 +152,7 @@ void AbstractNavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos
     }
 }
 
-void AbstractNavMesh::update(float deltaTime)
+void INavMesh::update(float deltaTime)
 {
     if (!_crowd)
         return;
@@ -176,7 +176,7 @@ void AbstractNavMesh::update(float deltaTime)
     }
 }
 
-void AbstractNavMesh::renderAgentPaths(irr::video::IVideoDriver* driver)
+void INavMesh::renderAgentPaths(irr::video::IVideoDriver* driver)
 {
     if (!_crowd || !driver)
         return;
@@ -224,7 +224,7 @@ void AbstractNavMesh::renderAgentPaths(irr::video::IVideoDriver* driver)
     }
 }
 
-irr::core::vector3df AbstractNavMesh::getClosestPointOnNavmesh(const irr::core::vector3df& pos)
+irr::core::vector3df INavMesh::getClosestPointOnNavmesh(const irr::core::vector3df& pos)
 {
     // If navmesh query isn't ready, return original position
     if (!_navQuery || !_navMesh)

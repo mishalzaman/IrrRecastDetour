@@ -1,7 +1,7 @@
 #include <irrlicht.h>
 #include <iostream>
 #include <vector>
-#include <IrrRecastDetour/TiledNavMesh.h>
+#include <IrrRecastDetour/CTiledNavMesh.h>
 
 #include <fstream>
 #include <sstream>
@@ -243,7 +243,7 @@ int main() {
     2. CREATE AND BUILD TILED NAVMESH
     =========================================================*/
     // a. Initialize TiledNavMesh
-    TiledNavMesh* navMesh = new TiledNavMesh(smgr->getRootSceneNode(), smgr);
+    CTiledNavMesh* navMesh = new CTiledNavMesh(smgr->getRootSceneNode(), smgr);
 
     // b. Create a NavMeshParams struct. 
     //    You can change the parameters to suit the map and agent requirements. 

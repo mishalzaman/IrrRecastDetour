@@ -53,14 +53,14 @@ endif()
 # --- Define Core Library Files ---
 # *** NEW PATHS ***
 set(LIB_SOURCES
-    "src/AbstractNavMesh.cpp"
-    "src/StaticNavMesh.cpp"
-    "src/TiledNavMesh.cpp"
+    "src/INavMesh.cpp"
+    "src/CStaticNavMesh.cpp"
+    "src/CTiledNavMesh.cpp"
 )
 set(LIB_HEADERS
-    "include/IrrRecastDetour/AbstractNavMesh.h"
-    "include/IrrRecastDetour/StaticNavMesh.h"
-    "include/IrrRecastDetour/TiledNavMesh.h"
+    "include/IrrRecastDetour/INavMesh.h"
+    "include/IrrRecastDetour/CStaticNavMesh.h"
+    "include/IrrRecastDetour/CTiledNavMesh.h"
 )
 
 # --- Define Your NavMesh Library (STATIC) ---

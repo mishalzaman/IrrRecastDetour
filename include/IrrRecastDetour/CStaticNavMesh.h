@@ -1,50 +1,8 @@
 #pragma once
 
-#include "AbstractNavMesh.h"
+#include "INavMesh.h"
 #include "Recast.h"
 #include "DetourNavMeshBuilder.h"
-
-// --- Deleters for Recast build objects ---
-struct RecastContextDeleter {
-    void operator()(rcContext* ctx) const { if (ctx) delete ctx; }
-};
-struct RecastHeightfieldDeleter {
-    void operator()(rcHeightfield* hf) const { rcFreeHeightField(hf); }
-};
-struct RecastCompactHeightfieldDeleter {
-    void operator()(rcCompactHeightfield* chf) const { rcFreeCompactHeightfield(chf); }
-};
-struct RecastContourSetDeleter {
-    void operator()(rcContourSet* cset) const { rcFreeContourSet(cset); }
-};
-struct RecastPolyMeshDeleter {
-    void operator()(rcPolyMesh* pmesh) const { rcFreePolyMesh(pmesh); }
-};
-struct RecastPolyMeshDetailDeleter {
-    void operator()(rcPolyMeshDetail* dmesh) const { rcFreePolyMeshDetail(dmesh); }
-};
-
-// --- Build Parameters ---
-// (Moved from original NavMesh.h)
-struct NavMeshParams
-{
-    float CellSize = 0.2f;
-    float CellHeight = 0.2f;
-    float AgentHeight = 1.0f;
-    float AgentRadius = 0.2f;
-    float AgentMaxClimb = 0.7f;
-    float AgentMaxSlope = 85.0f;
-    int   RegionMinSize = 8;
-    int   RegionMergeSize = 20;
-    bool  MonotonePartitioning = false;
-    float EdgeMaxLen = 12.0f;
-    float EdgeMaxError = 0.1f;
-    float VertsPerPoly = 6.0f;
-    float DetailSampleDist = 3.0f;
-    float DetailSampleMaxError = 0.5f;
-    bool  KeepInterResults = false;
-};
-
 
 /**
  * @class StaticNavMesh
@@ -54,15 +12,15 @@ struct NavMeshParams
  * It holds all the intermediate Recast build data (heightfields, polymeshes)
  * and implements a build() function that generates a single navmesh from static geometry.
  */
-class StaticNavMesh : public irr::scene::AbstractNavMesh
+class CStaticNavMesh : public irr::scene::INavMesh
 {
 public:
-    StaticNavMesh(
+    CStaticNavMesh(
         irr::scene::ISceneNode* parent,
         irr::scene::ISceneManager* mgr,
         irr::s32 id = -1
     );
-    ~StaticNavMesh();
+    ~CStaticNavMesh();
 
     /**
      * @brief Builds the navigation mesh from the given scene node.
