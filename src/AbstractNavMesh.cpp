@@ -6,6 +6,9 @@ using irr::core::vector3df;
 using irr::core::matrix4;
 using irr::scene::ISceneNode;
 
+using namespace irr;
+using namespace scene;
+
 AbstractNavMesh::AbstractNavMesh(irr::scene::ISceneNode* parent, irr::scene::ISceneManager* mgr, irr::s32 id)
     : irr::scene::ISceneNode(parent, mgr, id),
     _defaultAgentRadius(0.2f), // Set some sane defaults

@@ -54,7 +54,7 @@ struct NavMeshParams
  * It holds all the intermediate Recast build data (heightfields, polymeshes)
  * and implements a build() function that generates a single navmesh from static geometry.
  */
-class StaticNavMesh : public AbstractNavMesh
+class StaticNavMesh : public irr::scene::AbstractNavMesh
 {
 public:
     StaticNavMesh(

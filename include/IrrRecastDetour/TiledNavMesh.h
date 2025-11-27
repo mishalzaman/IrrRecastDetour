@@ -17,7 +17,7 @@
  * as class members, because they are created and destroyed per-tile
  * inside the build() loop.
  */
-class TiledNavMesh : public AbstractNavMesh
+class TiledNavMesh : public irr::scene::AbstractNavMesh
 {
 public:
     TiledNavMesh(
