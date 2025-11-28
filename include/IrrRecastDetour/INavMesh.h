@@ -228,6 +228,26 @@ namespace irr {
              */
             void RemoveAgent(int agentId);
 
+            /**
+             * @brief Gets the current velocity of an agent.
+             * @param agentId The ID of the agent.
+             * @return The agent's velocity vector. Returns zero vector if agent not found.
+             */
+            irr::core::vector3df GetAgentVelocity(int agentId);
+
+            /**
+             * @brief Gets the current target position of an agent.
+             * @param agentId The ID of the agent.
+             * @return The agent's target position. Returns zero vector if agent not found or has no target.
+             */
+            irr::core::vector3df GetAgentCurrentTarget(int agentId);
+
+            /**
+             * @brief Checks if an agent has reached its destination.
+             * @param agentId The ID of the agent.
+             * @return true if the agent has reached its destination, false otherwise.
+             */
+            bool HasAgentReachedDestination(int agentId);
 
         protected:
             // --- Core Detour Objects (RAII-managed) ---

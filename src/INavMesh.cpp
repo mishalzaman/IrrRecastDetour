@@ -475,3 +475,95 @@ void irr::scene::INavMesh::RemoveAgent(int agentId)
     // Remove from our tracking map
     _agentNodeMap.erase(it);
 }
+
+irr::core::vector3df irr::scene::INavMesh::GetAgentVelocity(int agentId)
+{
+    if (!_crowd)
+    {
+        printf("ERROR: INavMesh::getAgentVelocity: Crowd is null.\n");
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    if (agentId < 0 || agentId >= MAX_AGENTS)
+    {
+        printf("ERROR: INavMesh::getAgentVelocity: Invalid agent ID: %d\n", agentId);
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    const dtCrowdAgent* agent = _crowd->getAgent(agentId);
+    if (!agent || !agent->active)
+    {
+        printf("WARNING: INavMesh::getAgentVelocity: Agent %d not found or inactive.\n", agentId);
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    // Return the actual velocity (nvel) being applied to the agent
+    return irr::core::vector3df(agent->nvel[0], agent->nvel[1], agent->nvel[2]);
+}
+
+irr::core::vector3df irr::scene::INavMesh::GetAgentCurrentTarget(int agentId)
+{
+    if (!_crowd)
+    {
+        printf("ERROR: INavMesh::getAgentCurrentTarget: Crowd is null.\n");
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    if (agentId < 0 || agentId >= MAX_AGENTS)
+    {
+        printf("ERROR: INavMesh::getAgentCurrentTarget: Invalid agent ID: %d\n", agentId);
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    const dtCrowdAgent* agent = _crowd->getAgent(agentId);
+    if (!agent || !agent->active)
+    {
+        printf("WARNING: INavMesh::getAgentCurrentTarget: Agent %d not found or inactive.\n", agentId);
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    // Check if agent has a target
+    if (agent->targetState == DT_CROWDAGENT_TARGET_NONE ||
+        agent->targetState == DT_CROWDAGENT_TARGET_FAILED)
+    {
+        return irr::core::vector3df(0, 0, 0);
+    }
+
+    // Return the target position
+    return irr::core::vector3df(agent->targetPos[0], agent->targetPos[1], agent->targetPos[2]);
+}
+
+bool irr::scene::INavMesh::HasAgentReachedDestination(int agentId)
+{
+    if (!_crowd)
+    {
+        printf("ERROR: INavMesh::hasAgentReachedDestination: Crowd is null.\n");
+        return false;
+    }
+
+    if (agentId < 0 || agentId >= MAX_AGENTS)
+    {
+        printf("ERROR: INavMesh::hasAgentReachedDestination: Invalid agent ID: %d\n", agentId);
+        return false;
+    }
+
+    const dtCrowdAgent* agent = _crowd->getAgent(agentId);
+    if (!agent || !agent->active)
+    {
+        printf("WARNING: INavMesh::hasAgentReachedDestination: Agent %d not found or inactive.\n", agentId);
+        return false;
+    }
+
+    // Agent has reached destination if:
+    // 1. Target state is DT_CROWDAGENT_TARGET_VALID and ncorners is 0 (no more path corners)
+    // 2. Or target state is DT_CROWDAGENT_TARGET_REACHED
+    if (agent->targetState == DT_CROWDAGENT_TARGET_VALID && agent->ncorners == 0)
+    {
+        return true;
+    }
+
+    // Note: DT_CROWDAGENT_TARGET_REACHED might not exist in all Detour versions
+    // In that case, the above check (ncorners == 0) is sufficient
+
+    return false;
+}
