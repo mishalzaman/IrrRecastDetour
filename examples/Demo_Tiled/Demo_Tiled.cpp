@@ -427,6 +427,9 @@ int main() {
                 levelCollisionManager->getSceneNodeAndCollisionPointFromRay(
                     ray, intersectionPoint, hitTriangle, IDFlag_IsPickable, 0);
 
+			float distance = navMesh->GetPathDistance(playerNode->getPosition(), intersectionPoint);
+			std::cout << "Distance from origin to clicked point: " << distance << std::endl;
+
             if (selectedSceneNode && selectedSceneNode == mapNode) {
                 std::cout << "Mouse clicked mesh at: "
                     << intersectionPoint.X << ", "

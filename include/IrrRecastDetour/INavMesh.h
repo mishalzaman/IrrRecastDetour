@@ -1,7 +1,7 @@
 /*
 irrRecastDetour
 Created by: Mishal Zaman
-Version: 0.7.10
+Version: 0.7.16
 */
 
 #pragma once
@@ -198,6 +198,36 @@ namespace irr {
              * @return The closest valid position on the navmesh. Returns original pos if query fails.
              */
             irr::core::vector3df getClosestPointOnNavmesh(const irr::core::vector3df& pos);
+
+            /**
+             * @brief Gets a path between two positions on the navmesh.
+             * @param startPos The starting world-space position.
+             * @param endPos The ending world-space position.
+             * @return A vector of waypoints along the path. Empty if no path found.
+             */
+            std::vector<irr::core::vector3df> GetPath(
+                const irr::core::vector3df& startPos,
+                const irr::core::vector3df& endPos
+            );
+
+            /**
+             * @brief Calculates the distance along the navmesh between two positions.
+             * @param startPos The starting world-space position.
+             * @param endPos The ending world-space position.
+             * @return The total distance along the path in world units. Returns -1.0f if no path found.
+             */
+            float GetPathDistance(
+                const irr::core::vector3df& startPos,
+                const irr::core::vector3df& endPos
+            );
+
+            /**
+             * @brief Removes an agent from the crowd simulation.
+             * @param agentId The ID of the agent to remove (returned by addAgent).
+             * @return true if the agent was successfully removed, false otherwise.
+             */
+            void RemoveAgent(int agentId);
+
 
         protected:
             // --- Core Detour Objects (RAII-managed) ---

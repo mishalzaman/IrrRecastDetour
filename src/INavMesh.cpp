@@ -269,3 +269,209 @@ irr::core::vector3df INavMesh::getClosestPointOnNavmesh(const irr::core::vector3
     // If query failed, return original position
     return pos;
 }
+
+std::vector<irr::core::vector3df> irr::scene::INavMesh::GetPath(const irr::core::vector3df& startPos, const irr::core::vector3df& endPos)
+{
+    std::vector<irr::core::vector3df> path;
+
+    if (!_navQuery || !_navMesh)
+    {
+        printf("ERROR: INavMesh::getPath: NavQuery or NavMesh is null.\n");
+        return path;
+    }
+
+    // Convert positions to Detour format
+    float start[3] = { startPos.X, startPos.Y, startPos.Z };
+    float end[3] = { endPos.X, endPos.Y, endPos.Z };
+
+    // Search extents for finding nearest polygons
+    float extents[3] = { 2.0f, 4.0f, 2.0f };
+
+    // Query filter - which polygon types we can walk on
+    dtQueryFilter filter;
+    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setExcludeFlags(0);
+
+    // Find nearest polygons for start and end positions
+    dtPolyRef startRef = 0;
+    dtPolyRef endRef = 0;
+    float startNearest[3];
+    float endNearest[3];
+
+    dtStatus status = _navQuery->findNearestPoly(start, extents, &filter, &startRef, startNearest);
+    if (dtStatusFailed(status) || startRef == 0)
+    {
+        printf("ERROR: INavMesh::getPath: Could not find start polygon.\n");
+        return path;
+    }
+
+    status = _navQuery->findNearestPoly(end, extents, &filter, &endRef, endNearest);
+    if (dtStatusFailed(status) || endRef == 0)
+    {
+        printf("ERROR: INavMesh::getPath: Could not find end polygon.\n");
+        return path;
+    }
+
+    // Find the path (as a series of polygon references)
+    const int MAX_POLYS = 256;
+    dtPolyRef polys[MAX_POLYS];
+    int polyCount = 0;
+
+    status = _navQuery->findPath(startRef, endRef, startNearest, endNearest, &filter, polys, &polyCount, MAX_POLYS);
+    if (dtStatusFailed(status) || polyCount == 0)
+    {
+        printf("ERROR: INavMesh::getPath: Could not find path.\n");
+        return path;
+    }
+
+    // Convert polygon path to actual waypoints using findStraightPath
+    const int MAX_STRAIGHT_PATH = 256;
+    float straightPath[MAX_STRAIGHT_PATH * 3];
+    unsigned char straightPathFlags[MAX_STRAIGHT_PATH];
+    dtPolyRef straightPathPolys[MAX_STRAIGHT_PATH];
+    int straightPathCount = 0;
+
+    status = _navQuery->findStraightPath(
+        startNearest, endNearest,
+        polys, polyCount,
+        straightPath, straightPathFlags, straightPathPolys,
+        &straightPathCount, MAX_STRAIGHT_PATH,
+        DT_STRAIGHTPATH_AREA_CROSSINGS
+    );
+
+    if (dtStatusFailed(status) || straightPathCount == 0)
+    {
+        printf("ERROR: INavMesh::getPath: Could not create straight path.\n");
+        return path;
+    }
+
+    // Convert straight path to Irrlicht vector format
+    path.reserve(straightPathCount);
+    for (int i = 0; i < straightPathCount; ++i)
+    {
+        path.push_back(irr::core::vector3df(
+            straightPath[i * 3],
+            straightPath[i * 3 + 1],
+            straightPath[i * 3 + 2]
+        ));
+    }
+
+    return path;
+}
+
+float irr::scene::INavMesh::GetPathDistance(const irr::core::vector3df& startPos, const irr::core::vector3df& endPos)
+{
+    if (!_navQuery || !_navMesh)
+    {
+        printf("ERROR: INavMesh::getPathDistance: NavQuery or NavMesh is null.\n");
+        return -1.0f;
+    }
+
+    // Convert positions to Detour format
+    float start[3] = { startPos.X, startPos.Y, startPos.Z };
+    float end[3] = { endPos.X, endPos.Y, endPos.Z };
+
+    // Search extents for finding nearest polygons
+    float extents[3] = { 2.0f, 4.0f, 2.0f };
+
+    // Query filter - which polygon types we can walk on
+    dtQueryFilter filter;
+    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setExcludeFlags(0);
+
+    // Find nearest polygons for start and end positions
+    dtPolyRef startRef = 0;
+    dtPolyRef endRef = 0;
+    float startNearest[3];
+    float endNearest[3];
+
+    dtStatus status = _navQuery->findNearestPoly(start, extents, &filter, &startRef, startNearest);
+    if (dtStatusFailed(status) || startRef == 0)
+    {
+        printf("ERROR: INavMesh::getPathDistance: Could not find start polygon.\n");
+        return -1.0f;
+    }
+
+    status = _navQuery->findNearestPoly(end, extents, &filter, &endRef, endNearest);
+    if (dtStatusFailed(status) || endRef == 0)
+    {
+        printf("ERROR: INavMesh::getPathDistance: Could not find end polygon.\n");
+        return -1.0f;
+    }
+
+    // Find the path (as a series of polygon references)
+    const int MAX_POLYS = 256;
+    dtPolyRef polys[MAX_POLYS];
+    int polyCount = 0;
+
+    status = _navQuery->findPath(startRef, endRef, startNearest, endNearest, &filter, polys, &polyCount, MAX_POLYS);
+    if (dtStatusFailed(status) || polyCount == 0)
+    {
+        printf("ERROR: INavMesh::getPathDistance: Could not find path.\n");
+        return -1.0f;
+    }
+
+    // Convert polygon path to actual waypoints using findStraightPath
+    const int MAX_STRAIGHT_PATH = 256;
+    float straightPath[MAX_STRAIGHT_PATH * 3];
+    unsigned char straightPathFlags[MAX_STRAIGHT_PATH];
+    dtPolyRef straightPathPolys[MAX_STRAIGHT_PATH];
+    int straightPathCount = 0;
+
+    status = _navQuery->findStraightPath(
+        startNearest, endNearest,
+        polys, polyCount,
+        straightPath, straightPathFlags, straightPathPolys,
+        &straightPathCount, MAX_STRAIGHT_PATH,
+        DT_STRAIGHTPATH_AREA_CROSSINGS
+    );
+
+    if (dtStatusFailed(status) || straightPathCount == 0)
+    {
+        printf("ERROR: INavMesh::getPathDistance: Could not create straight path.\n");
+        return -1.0f;
+    }
+
+    // Calculate total distance by summing distances between consecutive waypoints
+    float totalDistance = 0.0f;
+    for (int i = 0; i < straightPathCount - 1; ++i)
+    {
+        float dx = straightPath[(i + 1) * 3 + 0] - straightPath[i * 3 + 0];
+        float dy = straightPath[(i + 1) * 3 + 1] - straightPath[i * 3 + 1];
+        float dz = straightPath[(i + 1) * 3 + 2] - straightPath[i * 3 + 2];
+
+        float segmentDistance = sqrtf(dx * dx + dy * dy + dz * dz);
+        totalDistance += segmentDistance;
+    }
+
+    return totalDistance;
+}
+
+void irr::scene::INavMesh::RemoveAgent(int agentId)
+{
+    if (!_crowd)
+    {
+        printf("ERROR: INavMesh::removeAgent: Crowd is null.\n");
+        return;
+    }
+
+    if (agentId < 0 || agentId >= MAX_AGENTS)
+    {
+        printf("ERROR: INavMesh::removeAgent: Invalid agent ID: %d\n", agentId);
+        return;
+    }
+
+    // Check if agent exists in our map
+    auto it = _agentNodeMap.find(agentId);
+    if (it == _agentNodeMap.end())
+    {
+        printf("WARNING: INavMesh::removeAgent: Agent ID %d not found in map.\n", agentId);
+        return;
+    }
+
+    // Remove from Detour crowd
+    _crowd->removeAgent(agentId);
+
+    // Remove from our tracking map
+    _agentNodeMap.erase(it);
+}
