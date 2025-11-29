@@ -1,4 +1,4 @@
-# Blender 4.0.2 MTL File: 'example_level.blend'
+# Blender 5.0.0 MTL File: 'example_level.blend'
 # www.blender.org
 
 newmtl Material
@@ -9,7 +9,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Kd C:/DEV/OpenGL/IrrRecastDetour/assets/test_level/Dark/texture_08.png
+map_Kd /home/aaron/Dev/IrrRecastDetour/assets/test_level/Dark/texture_08.png
 
 newmtl Material.001
 Ns 250.000000
@@ -19,7 +19,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Kd C:/DEV/OpenGL/IrrRecastDetour/assets/test_level/Green/texture_10.png
+map_Kd /home/aaron/Dev/IrrRecastDetour/assets/test_level/Green/texture_10.png
 
 newmtl Material.003
 Ns 250.000000
@@ -29,7 +29,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Kd C:/DEV/OpenGL/IrrRecastDetour/assets/test_level/Orange/texture_10.png
+map_Kd /home/aaron/Dev/IrrRecastDetour/assets/test_level/Orange/texture_10.png
 
 newmtl Material.004
 Ns 250.000000
