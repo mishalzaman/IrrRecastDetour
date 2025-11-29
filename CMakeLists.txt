@@ -25,7 +25,7 @@ set(IRRLICHT_ROOT "${irrlicht_SOURCE_DIR}")
 set(IRRLICHT_INCLUDE_DIR "${IRRLICHT_ROOT}/include")
 
 # ==============================================================================
-# 2. Compile Irrlicht (The Missing Step)
+# 2. Compile Irrlicht 
 # ==============================================================================
 # We need to find X11 and OpenGL to compile Irrlicht on Linux
 if(UNIX AND NOT APPLE)
