@@ -1,7 +1,7 @@
 /*
 irrRecastDetour
 Created by: Mishal Zaman
-Version: 0.7.19
+Version: 0.7.20
 */
 
 #pragma once
@@ -149,6 +149,7 @@ namespace irr {
             virtual void OnRegisterSceneNode() override;
             virtual void render() override;
             virtual const irr::core::aabbox3d<irr::f32>& getBoundingBox() const override;
+            virtual void OnAnimate(irr::u32 timeMs) override;
 
             // --- Agent (Crowd) Management ---
 
@@ -177,12 +178,6 @@ namespace irr {
              * @param targetPos The world-space destination.
              */
             void setAgentTarget(int agentId, irr::core::vector3df targetPos);
-
-            /**
-             * @brief Updates the crowd simulation. Call this ONCE per frame.
-             * @param deltaTime Time elapsed since the last frame, in seconds.
-             */
-            void update(float deltaTime);
 
             /**
             * @brief Renders debug lines for all agent paths in the crowd.
@@ -266,6 +261,8 @@ namespace irr {
 
             // --- ISceneNode Data ---
             irr::core::aabbox3d<irr::f32> _box;
+
+            irr::u32 _lastUpdateTimeMs = 0;
         };
     }
 }

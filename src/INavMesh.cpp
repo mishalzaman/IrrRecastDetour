@@ -32,6 +32,52 @@ void INavMesh::OnRegisterSceneNode()
     // The abstract node itself doesn't render, so no need to register it.
 }
 
+void INavMesh::OnAnimate(irr::u32 timeMs)
+{
+    if (!_crowd)
+        return;
+
+    // --- 1. Calculate Delta Time ---
+    // If this is the first call, initialize and skip the update
+    if (_lastUpdateTimeMs == 0)
+    {
+        _lastUpdateTimeMs = timeMs;
+        return;
+    }
+
+    // Delta time in seconds
+    const float deltaTime = (timeMs - _lastUpdateTimeMs) / 1000.0f;
+    _lastUpdateTimeMs = timeMs; // Update for next frame
+
+    if (deltaTime == 0.0f)
+        return; // Skip if no time has passed
+
+    // --- 2. Update the Crowd Simulation ---
+    // The second parameter (update_request) can usually be nullptr for simple updates
+    _crowd->update(deltaTime, nullptr);
+
+    // --- 3. Update all Irrlicht nodes based on their agent's new position ---
+    for (auto const& [id, node] : _agentNodeMap)
+    {
+        const dtCrowdAgent* agent = _crowd->getAgent(id);
+        if (!agent || !agent->active)
+            continue;
+
+        // Get agent's position (at their feet)
+        const float* pos = agent->npos;
+
+        // Update the scene node's position
+        // This offset (pos[1] + height/2.0f) assumes the Irrlicht node's origin 
+        // is at its center. This is a reasonable guess, but depends on your 
+        // model/node setup.
+        node->setPosition(irr::core::vector3df(
+            pos[0], 
+            pos[1] + (agent->params.height / 2.0f), 
+            pos[2]
+        ));
+    }
+}
+
 void INavMesh::render()
 {
     // This node does not render itself.
@@ -149,30 +195,6 @@ void INavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
     else
     {
         printf("WARNING: AbstractNavMesh::setAgentTarget: Could not find poly for target at (%f, %f, %f).\n", pos[0], pos[1], pos[2]);
-    }
-}
-
-void INavMesh::update(float deltaTime)
-{
-    if (!_crowd)
-        return;
-
-    // Update the crowd simulation
-    _crowd->update(deltaTime, nullptr);
-
-    // Update all Irrlicht nodes based on their agent's new position
-    for (auto const& [id, node] : _agentNodeMap)
-    {
-        const dtCrowdAgent* agent = _crowd->getAgent(id);
-        if (!agent || !agent->active)
-            continue;
-
-        // Get agent's position (at their feet)
-        const float* pos = agent->npos;
-
-        // Update the scene node's position
-        // We add half the agent's height to place the node's origin at its visual center.
-        node->setPosition(vector3df(pos[0], pos[1] + (agent->params.height / 2.0f), pos[2]));
     }
 }
 

@@ -388,8 +388,6 @@ int main() {
         float deltaTime = (float)(now - then) / 1000.0f;
         then = now;
 
-        navMesh->update(deltaTime);
-
         /*--------------------------------------------------------
         ESC KEY (EXIT)
         --------------------------------------------------------*/
