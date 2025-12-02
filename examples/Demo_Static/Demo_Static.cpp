@@ -31,6 +31,9 @@ enum
     IDFlag_IsHighlightable = 1 << 1
 };
 
+/*===========================================================
+HELPERS
+===========================================================*/
 std::string readFile(const std::string& filePath) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
@@ -107,7 +110,6 @@ int main() {
     camera->setFOV(core::degToRad(60.0f));
     camera->setNearValue(0.1f);
     camera->setFarValue(1000.0f);
-
     camera->setPosition(vector3df(0, 15, 0));
     camera->setTarget(vector3df(0, 0, 0));
 
