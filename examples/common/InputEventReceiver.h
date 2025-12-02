@@ -1,7 +1,6 @@
 #pragma once
 #include <irrlicht.h>
 #include <iostream>
-#include "NavMeshGUI.h" // Include NavMeshGUI
 
 using namespace irr;
 using namespace core;
@@ -10,7 +9,6 @@ using namespace gui;
 class InputEventListener : public IEventReceiver {
 private:
     IGUIEnvironment* guienv;
-    NavMeshGUI* navMeshGUI; // Add NavMeshGUI pointer
 
     bool mouseClicked;
     position2di mousePos;
@@ -23,7 +21,6 @@ private:
 public:
     InputEventListener() :
         guienv(0),
-        navMeshGUI(0), // Initialize to null
         mouseClicked(false),
         bIsRightMouseDown(false)
     {
@@ -38,25 +35,8 @@ public:
         guienv = env;
     }
 
-    /**
-     * @brief Set the NavMeshGUI pointer
-     */
-    void setNavMeshGUI(NavMeshGUI* gui) {
-        navMeshGUI = gui;
-    }
-
     virtual bool OnEvent(const SEvent& event) {
-
-        // ================================================================
-        //  STEP 1: Give NavMeshGUI first priority for its events
-        // ================================================================
-        if (navMeshGUI && navMeshGUI->OnEvent(event)) {
-            // NavMeshGUI handled the event (e.g., slider interaction)
-            return true;
-        }
-
-        // ================================================================
-        //  STEP 2: Give the GUI environment general priority
+        //  STEP 1: Give the GUI environment general priority
         // ================================================================
         if (guienv && guienv->postEventFromUser(event)) {
             // GUI consumed the event
@@ -64,7 +44,7 @@ public:
         }
 
         // ================================================================
-        //  STEP 3: If GUI didn't want it, process it for game logic
+        //  STEP 2: If GUI didn't want it, process it for game logic
         // ================================================================
 
         // --- Handle Mouse Events for the Game ---

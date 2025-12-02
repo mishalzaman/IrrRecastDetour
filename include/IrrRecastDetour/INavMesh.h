@@ -1,7 +1,7 @@
 /*
 irrRecastDetour
 Created by: Mishal Zaman
-Version: 0.7.20
+Version: 0.7.21
 */
 
 #pragma once

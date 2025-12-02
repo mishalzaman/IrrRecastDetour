@@ -8,7 +8,6 @@
 
 #include "../common/InputEventReceiver.h"
 #include "../common/Config.h"
-#include "../common/NavMeshGUI.h"
 
 // Namespaces
 using namespace irr;
@@ -92,7 +91,6 @@ int main() {
 
     IVideoDriver* driver = device->getVideoDriver();
     ISceneManager* smgr = device->getSceneManager();
-    IGUIEnvironment* guienv = device->getGUIEnvironment();
 
     /*=========================================================
     CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
@@ -203,7 +201,7 @@ int main() {
     1. LOAD MAP
     =========================================================*/
     scene::ISceneCollisionManager* levelCollisionManager = nullptr;
-    IAnimatedMesh* mapMesh = smgr->getMesh("assets/example_level/example_level_dynamic.obj");
+    IAnimatedMesh* mapMesh = smgr->getMesh("assets/example_level/example_level.obj");
     if (!mapMesh) {
         std::cerr << "Failed to load level mesh: assets/example_level/example_level_dynamic.obj" << std::endl;
         device->drop();
@@ -300,85 +298,6 @@ int main() {
     playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
 
     /*=========================================================
-    GUI SETUP WITH BUILD CALLBACK
-    =========================================================*/
-    NavMeshGUI* navMeshGui = new NavMeshGUI(guienv);
-    navMeshGui->Load(windowWidth, windowHeight);
-
-    receiver.setGUIEnvironment(guienv);
-    receiver.setNavMeshGUI(navMeshGui);
-
-    navMeshGui->setBuildCallback([&]() {
-        f32 cellSize = navMeshGui->getSliderValue("CellSize");
-
-        // Don't manually remove it - let the TiledNavMesh::build() handle cleanup
-        debugNavMeshNode = nullptr;
-
-        NavMeshParams params;
-
-        // 1. Rasterization
-        params.CellSize = navMeshGui->getSliderValue("CellSize");
-        params.CellHeight = navMeshGui->getSliderValue("CellHeight");
-
-        // 2. Agent Properties
-        params.AgentHeight = navMeshGui->getSliderValue("AgentHeight");
-        params.AgentRadius = navMeshGui->getSliderValue("AgentRadius");
-        params.AgentMaxClimb = navMeshGui->getSliderValue("AgentMaxClimb");
-        params.AgentMaxSlope = navMeshGui->getSliderValue("AgentMaxSlope");
-
-        // 3. Region / Filtering
-        params.RegionMinSize = navMeshGui->getSliderValue("RegionMinSize");
-        params.RegionMergeSize = navMeshGui->getSliderValue("RegionMergeSize");
-
-        // 4. Polygonization
-        params.EdgeMaxLen = navMeshGui->getSliderValue("EdgeMaxLen");
-        params.EdgeMaxError = navMeshGui->getSliderValue("EdgeMaxError");
-        params.VertsPerPoly = navMeshGui->getSliderValue("VertsPerPoly");
-
-        // 5. Detail Mesh
-        params.DetailSampleDist = navMeshGui->getSliderValue("DetailSampleDist");
-        params.DetailSampleMaxError = navMeshGui->getSliderValue("DetailSampleMaxError");
-
-        // Required for debug visualization
-        params.KeepInterResults = true;
-
-        std::cout << "Re-building tiled navmesh..." << std::endl;
-        bool success = navMesh->build(mapNode, params, tileSize);
-
-        if (success) {
-            std::cout << "Tiled NavMesh built successfully! Build time: "
-                << navMesh->getTotalBuildTimeMs() << " ms" << std::endl;
-
-            // Create new debug visualization
-            debugNavMeshNode = nullptr;
-            debugNavMeshNode = navMesh->renderNavMesh();
-            if (debugNavMeshNode) {
-                debugNavMeshNode->setMaterialFlag(EMF_LIGHTING, false);
-                debugNavMeshNode->setMaterialFlag(EMF_WIREFRAME, true);
-                debugNavMeshNode->getMaterial(0).EmissiveColor.set(255, 0, 150, 255);
-            }
-
-            // Add player node to navmesh agent list
-            playerNode->setScale(vector3df(params.AgentRadius * 2, params.AgentRadius * 2, params.AgentRadius * 2));
-            playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
-        }
-        else {
-            std::cout << "Tiled NavMesh build failed!" << std::endl;
-        }
-        });
-
-    navMeshGui->setShowNavmeshCallback([&](bool show) {
-        if (debugNavMeshNode) {
-            if (show) {
-                debugNavMeshNode->setVisible(true);
-            }
-            else {
-                debugNavMeshNode->setVisible(false);
-            }
-        }
-        });
-
-    /*=========================================================
     MAIN LOOP
     =========================================================*/
     u32 then = device->getTimer()->getTime();
@@ -469,7 +388,6 @@ int main() {
             navMesh->renderAgentPaths(driver);
         }
 
-        guienv->drawAll();
         driver->endScene();
     }
 
