@@ -334,8 +334,8 @@ unsigned char* CTiledNavMesh::_buildTile(
         {
             if (pmesh->areas[i] == RC_WALKABLE_AREA)
             {
-                pmesh->areas[i] = (unsigned char)SamplePolyAreas::GROUND;
-                pmesh->flags[i] = (unsigned short)SamplePolyFlags::WALK;
+                pmesh->areas[i] = (unsigned char)PolyAreas::GROUND;
+                pmesh->flags[i] = (unsigned short)PolyFlags::WALK;
             }
         }
 

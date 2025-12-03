@@ -261,21 +261,21 @@ bool CStaticNavMesh::build(IMeshSceneNode* levelNode, const NavMeshParams& param
         for (int i = 0; i < _pmesh->npolys; ++i)
         {
             if (_pmesh->areas[i] == RC_WALKABLE_AREA)
-                _pmesh->areas[i] = (unsigned char)SamplePolyAreas::GROUND;
+                _pmesh->areas[i] = (unsigned char)PolyAreas::GROUND;
 
-            if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::GROUND ||
-                _pmesh->areas[i] == (unsigned char)SamplePolyAreas::GRASS ||
-                _pmesh->areas[i] == (unsigned char)SamplePolyAreas::ROAD)
+            if (_pmesh->areas[i] == (unsigned char)PolyAreas::GROUND ||
+                _pmesh->areas[i] == (unsigned char)PolyAreas::GRASS ||
+                _pmesh->areas[i] == (unsigned char)PolyAreas::ROAD)
             {
-                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::WALK;
+                _pmesh->flags[i] = (unsigned short)PolyFlags::WALK;
             }
-            else if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::WATER)
+            else if (_pmesh->areas[i] == (unsigned char)PolyAreas::WATER)
             {
-                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::SWIM;
+                _pmesh->flags[i] = (unsigned short)PolyFlags::SWIM;
             }
-            else if (_pmesh->areas[i] == (unsigned char)SamplePolyAreas::DOOR)
+            else if (_pmesh->areas[i] == (unsigned char)PolyAreas::DOOR)
             {
-                _pmesh->flags[i] = (unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR;
+                _pmesh->flags[i] = (unsigned short)PolyFlags::WALK | (unsigned short)PolyFlags::DOOR;
             }
         }
 

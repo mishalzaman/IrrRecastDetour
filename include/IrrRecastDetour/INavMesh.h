@@ -1,7 +1,7 @@
 /*
 irrRecastDetour
 Created by: Mishal Zaman
-Version: 0.7.21
+Version: 0.7.22
 */
 
 #pragma once
@@ -30,13 +30,19 @@ Version: 0.7.21
 
 // --- Custom Deleters for Detour objects ---
 struct DetourNavMeshDeleter {
-    void operator()(dtNavMesh* navMesh) const { if (navMesh) dtFreeNavMesh(navMesh); }
+    void operator()(dtNavMesh* navMesh) const { 
+	if (navMesh) dtFreeNavMesh(navMesh); 
+    }
 };
 struct DetourNavMeshQueryDeleter {
-    void operator()(dtNavMeshQuery* navQuery) const { if (navQuery) dtFreeNavMeshQuery(navQuery); }
+    void operator()(dtNavMeshQuery* navQuery) const { 
+	if (navQuery) dtFreeNavMeshQuery(navQuery); 
+    }
 };
 struct DetourCrowdDeleter {
-    void operator()(dtCrowd* crowd) const { if (crowd) dtFreeCrowd(crowd); }
+    void operator()(dtCrowd* crowd) const { 
+	if (crowd) dtFreeCrowd(crowd); 
+    }
 };
 
 // --- Custom Deleters for Recast objects ---
@@ -44,23 +50,33 @@ struct RecastContextDeleter {
     void operator()(rcContext* ctx) const { delete ctx; }
 };
 struct RecastHeightfieldDeleter {
-    void operator()(rcHeightfield* hf) const { if (hf) rcFreeHeightField(hf); }
+    void operator()(rcHeightfield* hf) const { 
+	if (hf) rcFreeHeightField(hf); 
+    }
 };
 struct RecastCompactHeightfieldDeleter {
-    void operator()(rcCompactHeightfield* chf) const { if (chf) rcFreeCompactHeightfield(chf); }
+    void operator()(rcCompactHeightfield* chf) const { 
+	if (chf) rcFreeCompactHeightfield(chf); 
+    }
 };
 struct RecastContourSetDeleter {
-    void operator()(rcContourSet* cset) const { if (cset) rcFreeContourSet(cset); }
+    void operator()(rcContourSet* cset) const { 
+	if (cset) rcFreeContourSet(cset); 
+    }
 };
 struct RecastPolyMeshDeleter {
-    void operator()(rcPolyMesh* pmesh) const { if (pmesh) rcFreePolyMesh(pmesh); }
+    void operator()(rcPolyMesh* pmesh) const { 
+	if (pmesh) rcFreePolyMesh(pmesh); 
+    }
 };
 struct RecastPolyMeshDetailDeleter {
-    void operator()(rcPolyMeshDetail* dmesh) const { if (dmesh) rcFreePolyMeshDetail(dmesh); }
+    void operator()(rcPolyMeshDetail* dmesh) const { 
+	if (dmesh) rcFreePolyMeshDetail(dmesh); 
+    }
 };
 
 // --- Polygon Areas and Flags ---
-enum class SamplePolyAreas
+enum class PolyAreas
 {
     GROUND,
     WATER,
@@ -69,7 +85,7 @@ enum class SamplePolyAreas
     GRASS,
     JUMP,
 };
-enum class SamplePolyFlags : unsigned short
+enum class PolyFlags : unsigned short
 {
     WALK = 0x01,            // Ability to walk (ground, grass, road)
     SWIM = 0x02,            // Ability to swim (water).
@@ -266,3 +282,5 @@ namespace irr {
         };
     }
 }
+
+

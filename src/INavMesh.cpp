@@ -182,7 +182,7 @@ void INavMesh::setAgentTarget(int agentId, irr::core::vector3df targetPos)
 
     // Setup filter - allow walking on GROUND, ROAD, GRASS, and through DOORS
     dtQueryFilter filter;
-    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setIncludeFlags((unsigned short)PolyFlags::WALK | (unsigned short)PolyFlags::DOOR);
     filter.setExcludeFlags(0);
 
     _navQuery->findNearestPoly(pos, ext, &filter, &targetRef, nearestPt);
@@ -262,7 +262,7 @@ irr::core::vector3df INavMesh::getClosestPointOnNavmesh(const irr::core::vector3
 
     // Query filter - which polygon types we can walk on
     dtQueryFilter filter;
-    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setIncludeFlags((unsigned short)PolyFlags::WALK | (unsigned short)PolyFlags::DOOR);
     filter.setExcludeFlags(0);
 
     // Output variables
@@ -311,7 +311,7 @@ std::vector<irr::core::vector3df> irr::scene::INavMesh::GetPath(const irr::core:
 
     // Query filter - which polygon types we can walk on
     dtQueryFilter filter;
-    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setIncludeFlags((unsigned short)PolyFlags::WALK | (unsigned short)PolyFlags::DOOR);
     filter.setExcludeFlags(0);
 
     // Find nearest polygons for start and end positions
@@ -398,7 +398,7 @@ float irr::scene::INavMesh::GetPathDistance(const irr::core::vector3df& startPos
 
     // Query filter - which polygon types we can walk on
     dtQueryFilter filter;
-    filter.setIncludeFlags((unsigned short)SamplePolyFlags::WALK | (unsigned short)SamplePolyFlags::DOOR);
+    filter.setIncludeFlags((unsigned short)PolyFlags::WALK | (unsigned short)PolyFlags::DOOR);
     filter.setExcludeFlags(0);
 
     // Find nearest polygons for start and end positions
