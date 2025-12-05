@@ -1,7 +1,6 @@
 
 
-# **Irrlicht Engine NavMesh with Recast & Detour**
-## Version 0.7.25
+# **Irrlicht Engine NavMesh with Recast & Detour / Version 0.7.25**
 
 This project integrates the **Recast** (navigation mesh generation) and **Detour** (pathfinding and crowd simulation) libraries into the **Irrlicht Engine**.
 
