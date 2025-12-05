@@ -31,19 +31,7 @@ enum
     IDFlag_IsHighlightable = 1 << 1
 };
 
-std::string readFile(const std::string& filePath) {
-    std::ifstream file(filePath);
-    if (!file.is_open()) {
-        std::cerr << "Could not open file: " << filePath << std::endl;
-        return "";
-    }
-    else {
-        std::cout << "Successfully opened file: " << filePath << std::endl;
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
+// REMOVED: readFile helper function
 
 /**
  * @brief Finds the 3D world position of a mouse click on the level geometry.
@@ -78,6 +66,7 @@ int main() {
     IRRLICHT SETUP
     =========================================================*/
     InputEventListener receiver;
+    // Set stencil buffer to false (fifth parameter) for maximum compatibility
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL,
         dimension2d<u32>(windowWidth, windowHeight),
@@ -87,10 +76,11 @@ int main() {
         std::cerr << "Failed to create Irrlicht device!" << std::endl;
         return 1;
     }
-    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Tiled NavMesh");
+    device->setWindowCaption(L"Irrlicht Recast/Detour Demo - Tiled NavMesh (Basic Phong Lighting)");
 
     IVideoDriver* driver = device->getVideoDriver();
     ISceneManager* smgr = device->getSceneManager();
+    smgr->setAmbientLight(SColorf(0.3f, 0.3f, 0.3f, 1.0f)); // Set a basic ambient light
 
     /*=========================================================
     CAMERA - PERSPECTIVE WITH ORBITAL CONTROL
@@ -112,85 +102,15 @@ int main() {
     camera->setTarget(vector3df(0, 0, 0));
 
     /*=========================================================
-    CUSTOM SHADER CALLBACK
+    DIRECTIONAL LIGHT
     =========================================================*/
-    class ShaderCallback : public video::IShaderConstantSetCallBack
-    {
-    private:
-        ISceneManager* smgr;
+    // Simple directional light setup
+    scene::ILightSceneNode* light = smgr->addLightSceneNode(0, vector3df(50.0f, 500.0f, 50.0f),
+        SColorf(1.0f, 1.0f, 1.0f), 800.0f);
+    light->setLightType(video::ELT_DIRECTIONAL);
+    light->setRotation(vector3df(45, 0, 0));
 
-    public:
-        ShaderCallback(ISceneManager* sceneManager) : smgr(sceneManager) {}
-
-        virtual void OnSetConstants(video::IMaterialRendererServices* services, s32 userData)
-        {
-            video::IVideoDriver* driver = services->getVideoDriver();
-
-            // 1. MATRICES (Correct - These belong in Vertex Shader)
-            core::matrix4 worldViewProj = driver->getTransform(video::ETS_PROJECTION);
-            worldViewProj *= driver->getTransform(video::ETS_VIEW);
-            worldViewProj *= driver->getTransform(video::ETS_WORLD);
-            services->setVertexShaderConstant("mWorldViewProj", worldViewProj.pointer(), 16);
-
-            core::matrix4 world = driver->getTransform(video::ETS_WORLD);
-            services->setVertexShaderConstant("mWorld", world.pointer(), 16);
-
-            // 2. LIGHT POSITION (CHANGE THIS)
-            f32 lightPos[3] = { 50.0f, 500.0f, 50.0f };
-            services->setPixelShaderConstant("mLightPos", lightPos, 3);
-
-            f32 ambientStrength = 0.2f;
-            services->setPixelShaderConstant("mAmbientStrength", &ambientStrength, 1);
-
-            f32 specularStrength = 0.1f;
-            services->setPixelShaderConstant("mSpecularStrength", &specularStrength, 1);
-
-            int textureUnit = 0;
-            services->setPixelShaderConstant("mTexture", &textureUnit, 1);
-        }
-    };
-
-    /*=========================================================
-    CUSTOM SHADER SETUP
-    =========================================================*/
-    ShaderCallback* shaderCallback = new ShaderCallback(smgr);
-
-    s32 materialType = 0;
-    std::string vertCode = readFile("assets/main.vert");
-    std::string fragCode = readFile("assets/main.frag");
-
-    if (vertCode.empty() || fragCode.empty())
-    {
-        std::cerr << "Failed to read shader files!" << std::endl;
-        materialType = EMT_SOLID;
-    }
-    else if (driver->queryFeature(video::EVDF_ARB_GLSL))
-    {
-        IGPUProgrammingServices* gpu = driver->getGPUProgrammingServices();
-
-        if (gpu)
-        {
-            materialType = gpu->addHighLevelShaderMaterial(
-                vertCode.c_str(), "main", video::EVST_VS_1_1,
-                fragCode.c_str(), "main", video::EPST_PS_1_1,
-                shaderCallback, video::EMT_SOLID, 0, video::EGSL_DEFAULT);
-
-            if (materialType == -1)
-            {
-                std::cerr << "Failed to create custom shader material!" << std::endl;
-                materialType = EMT_SOLID;
-            }
-            else
-            {
-                std::cout << "Custom Unreal-style shader loaded successfully! Material type: " << materialType << std::endl;
-            }
-        }
-    }
-    else
-    {
-        std::cerr << "GLSL not supported, using default material" << std::endl;
-        materialType = EMT_SOLID;
-    }
+    // REMOVED: All custom shader setup code (ShaderCallback, readFile calls, addHighLevelShaderMaterial)
 
     /*=========================================================
                            NAVMESH SETUP
@@ -213,18 +133,21 @@ int main() {
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setID(IDFlag_IsPickable);
         mapNode->setVisible(true);
+        mapNode->setMaterialFlag(EMF_NORMALIZE_NORMALS, true); // Recommended for lighting
 
         std::cout << "Map node material count: " << mapNode->getMaterialCount() << std::endl;
 
+        // Use a standard material type and enable lighting
+        s32 materialType = video::EMT_SOLID;
         for (u32 i = 0; i < mapNode->getMaterialCount(); i++)
         {
             SMaterial& mat = mapNode->getMaterial(i);
             mat.MaterialType = (E_MATERIAL_TYPE)materialType;
-            mat.Lighting = false;
+            mat.Lighting = true; // IMPORTANT: Enable lighting for the built-in shader
             mat.Wireframe = false;
         }
 
-        std::cout << "Map node material type set to: " << materialType << std::endl;
+        std::cout << "Map node material type set to: " << materialType << " with lighting enabled." << std::endl;
 
         scene::ITriangleSelector* selector = smgr->createOctreeTriangleSelector(
             mapNode->getMesh(), mapNode, 128
@@ -244,7 +167,6 @@ int main() {
     CTiledNavMesh* navMesh = new CTiledNavMesh(smgr->getRootSceneNode(), smgr);
 
     // b. Create a NavMeshParams struct. 
-    //    You can change the parameters to suit the map and agent requirements. 
     NavMeshParams params;
     params.CellSize = 0.15f;
     params.CellHeight = 0.2f;
@@ -292,8 +214,15 @@ int main() {
     vector3df initialPlayerPos(5, 1, 5);
 
     playerNode = smgr->addSphereSceneNode(params.AgentRadius);
-    playerNode->setMaterialFlag(EMF_LIGHTING, false);
-    playerNode->getMaterial(0).EmissiveColor.set(255, 255, 0, 0); // Red
+    playerNode->setMaterialFlag(EMF_LIGHTING, true); // Enable lighting
+    playerNode->setMaterialFlag(EMF_NORMALIZE_NORMALS, true); // Recommended for lighting
+    playerNode->setMaterialFlag(EMF_GOURAUD_SHADING, true); 
+
+    // Adjusting material properties for Phong lighting
+    playerNode->getMaterial(0).EmissiveColor.set(0, 0, 0, 0); // Remove emissive color
+    playerNode->getMaterial(0).AmbientColor.set(255, 255, 0, 0); // Set red ambient color
+    playerNode->getMaterial(0).DiffuseColor.set(255, 255, 0, 0); // Set red diffuse color
+
     playerNode->setPosition(initialPlayerPos);
     playerId = navMesh->addAgent(playerNode, params.AgentRadius, params.AgentHeight);
 
@@ -380,7 +309,7 @@ int main() {
         }
 
         // --- Render ---
-        driver->beginScene(true, true, SColor(255, 30, 35, 45)); // Darker, cooler background
+        driver->beginScene(true, true, SColor(255, 100, 100, 100)); // Changed to a lighter background
 
         smgr->drawAll();
 
