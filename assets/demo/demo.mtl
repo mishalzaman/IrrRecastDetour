@@ -9,7 +9,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Orange/texture_10.png
+map_Kd textures/can_jump.png
 
 newmtl cliff_no_jump
 Ns 250.000000
@@ -19,7 +19,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Purple/texture_09.png
+map_Kd textures/cannot_jump.png
 
 newmtl cube
 Ns 250.000000
@@ -29,7 +29,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Green/texture_10.png
+map_Kd textures/block.png
 
 newmtl ground
 Ns 250.000000
@@ -39,7 +39,7 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Dark/texture_09.png
+map_Kd textures/ground.png
 
 newmtl white
 Ns 250.000000
@@ -49,4 +49,4 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd Light/texture_01.png
+map_Kd textures/snow.png
