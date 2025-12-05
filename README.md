@@ -1,6 +1,7 @@
 
 
-# **Irrlicht Engine NavMesh with Recast & Detour / Version 0.7.27**
+# IrrRecastDetour
+Version 0.7.28
 
 This project integrates the **Recast** (navigation mesh generation) and **Detour** (pathfinding and crowd simulation) libraries into the **Irrlicht Engine**.
 
@@ -17,4 +18,4 @@ The implementation emphasizes modern C++ by using RAII (std::unique\_ptr with cu
 * Create build folder
 * `cd` in to `build` folder and run `cmake ..`
 * Then run `make`
-* Examples found in examples folder
+* Examples found in _examples_ folder
