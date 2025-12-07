@@ -1,5 +1,5 @@
 # IrrRecastDetour
-**Version 0.4.31**
+**Version 0.4.32**
 
 A modern C++ integration of the **Recast** (navigation mesh generation) and **Detour** (pathfinding and crowd simulation) libraries into the **Irrlicht Engine**.
 
@@ -8,6 +8,8 @@ A modern C++ integration of the **Recast** (navigation mesh generation) and **De
 This project provides clean, self-contained NavMesh classes that wrap the entire Recast/Detour pipeline. These classes inherit from `irr::scene::ISceneNode`, allowing them to be seamlessly integrated into any Irrlicht project as standard scene nodes.
 
 The implementation emphasizes modern C++ practices by using RAII (Resource Acquisition Is Initialization) with `std::unique_ptr` and custom deleters to safely manage the memory of the C-style Recast/Detour libraries.
+
+<figure> <img src="demo.gif" alt="A GIF of a spinning globe" style="width: 100%;"> <figcaption>Tiled navigation mesh</figcaption> </figure>
 
 ## Features
 
@@ -32,6 +34,10 @@ The implementation emphasizes modern C++ practices by using RAII (Resource Acqui
   - Smart pointers with custom deleters
   - Clean separation of concerns
   - Intuitive API
+
+## Todo
+  - Add ability to create polygon areas (walk, swim, door etc)
+  - Add dynamic navmesh updates based on changes within the level
 
 ## Dependencies
 
