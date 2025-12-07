@@ -1,5 +1,5 @@
 # IrrRecastDetour
-**Version 0.7.28**
+**Version 0.4.31**
 
 A modern C++ integration of the **Recast** (navigation mesh generation) and **Detour** (pathfinding and crowd simulation) libraries into the **Irrlicht Engine**.
 
