@@ -29,10 +29,23 @@ int main() {
     IRRLICHT SETUP
     =========================================================*/
     InputEventListener receiver;
+
+    // 1. Get Desktop Resolution
+    // We create a temporary NULL device to query the desktop's current resolution.
+    IrrlichtDevice* nullDevice = createDevice(video::EDT_NULL);
+    dimension2d<u32> deskRes = nullDevice->getVideoModeList()->getDesktopResolution();
+    nullDevice->drop();
+
+    // 2. Create Real Device with Desktop Resolution
+    // Param 4 set to 'true' enables Fullscreen mode.
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL,
-        dimension2d<u32>(Config::WINDOW_WIDTH, Config::WINDOW_HEIGHT),
-        32, false, false, false, &receiver);
+        deskRes,
+        32,
+        false,   // Fullscreen = true
+        false,
+        false,
+        &receiver);
 
     if (!device) {
         std::cerr << "Failed to create Irrlicht device!" << std::endl;
@@ -111,7 +124,7 @@ int main() {
     ICameraSceneNode* camera = smgr->addCameraSceneNode();
 
     // --- FOV UPDATE ---
-    camera->setFOV(core::degToRad(45.0f));
+    camera->setFOV(core::degToRad(60.0f));
 
     // --- CLIPPING FIX PART 2 ---
     // Set Near Value small so the camera renders geometry even when very close
