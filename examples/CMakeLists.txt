@@ -17,10 +17,17 @@ add_executable(Demo_Tiled
     ${DEMO_COMMON_SOURCES}
 )
 
+# -- Realms
+add_executable(Realms
+    "Realms/Realms.cpp"
+    ${DEMO_COMMON_SOURCES}
+)
+
 # --- Link Demos ---
 set(DEMO_TARGETS
     Demo_Static
     Demo_Tiled
+    Realms
 )
 
 foreach(DEMO_TARGET ${DEMO_TARGETS})
@@ -70,5 +77,6 @@ endforeach()
 source_group("Demos" FILES 
     "Demo_Static/Demo_Static.cpp"
     "Demo_Tiled/Demo_Tiled.cpp"
+    "Realms/Realms.cpp"
 )
 source_group("Demo Common" FILES ${DEMO_COMMON_SOURCES})
