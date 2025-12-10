@@ -31,19 +31,17 @@ int main() {
     InputEventListener receiver;
 
     // 1. Get Desktop Resolution
-    // We create a temporary NULL device to query the desktop's current resolution.
     IrrlichtDevice* nullDevice = createDevice(video::EDT_NULL);
     dimension2d<u32> deskRes = nullDevice->getVideoModeList()->getDesktopResolution();
     deskRes.Height = (deskRes.Width/4)*3; // Use 4:3 ratio
     nullDevice->drop();
 
-    // 2. Create Real Device with Desktop Resolution
-    // Param 4 set to 'true' enables Fullscreen mode.
+    // 2. Create Real Device
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL,
         deskRes,
         32,
-        false,   // Fullscreen = true
+        false,   // Fullscreen
         false,
         false,
         &receiver);
@@ -74,8 +72,6 @@ int main() {
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setMaterialFlag(EMF_NORMALIZE_NORMALS, true);
         
-        // --- TEXTURE FILTERING UPDATE ---
-        // Disable all smoothing filters for "Nearest" pixelated look
         mapNode->setMaterialFlag(EMF_BILINEAR_FILTER, false);
         mapNode->setMaterialFlag(EMF_TRILINEAR_FILTER, false);
         mapNode->setMaterialFlag(EMF_ANISOTROPIC_FILTER, false);
@@ -91,16 +87,9 @@ int main() {
     params.CellSize = 0.15f;
     params.CellHeight = 0.2f;
     params.AgentHeight = 1.2f; 
-    
-    // --- CLIPPING FIX PART 1 ---
-    // Increased radius keeps the player center further from walls.
-    // 0.4f -> 0.8f pushes the "walkable" edge back, preventing the camera 
-    // from getting close enough to clip into the wall geometry.
     params.AgentRadius = 0.2f; 
-    
     params.AgentMaxClimb = 0.6f;
     params.AgentMaxSlope = 45.f;
-    
     params.RegionMinSize = 8.f;
     params.RegionMergeSize = 20.f;
     params.EdgeMaxError = 1.3f;
@@ -117,27 +106,20 @@ int main() {
     }
 
     navMesh->renderNavMesh(); 
+
     /*=========================================================
     PLAYER & CAMERA SETUP
     =========================================================*/
-    
-    // 1. Standard Camera
     ICameraSceneNode* camera = smgr->addCameraSceneNode();
-
-    // --- FOV UPDATE ---
     camera->setFOV(core::degToRad(60.0f));
-
-    // --- CLIPPING FIX PART 2 ---
-    // Set Near Value small so the camera renders geometry even when very close
     camera->setNearValue(0.1f);
 
-    // 2. Player Node (Visual representation)
     ISceneNode* playerNode = smgr->addSphereSceneNode(params.AgentRadius);
     playerNode->setMaterialFlag(EMF_LIGHTING, true);
     playerNode->getMaterial(0).EmissiveColor.set(0, 0, 0, 0); 
     playerNode->getMaterial(0).AmbientColor.set(255, 0, 255, 0); 
     playerNode->getMaterial(0).DiffuseColor.set(255, 0, 255, 0);
-    playerNode->setVisible(false); // Hide the green sphere since we are in FPS view
+    playerNode->setVisible(false);
     
     // Initial State
     vector3df playerPos(5, 1, 5);
@@ -148,13 +130,25 @@ int main() {
     f32 eyeHeight = 1.2f;
 
     /*=========================================================
+    MOVEMENT PHYSICS VARIABLES
+    =========================================================*/
+    // Settings
+    const float MAX_SPEED       = 2.0f;  // Max units per second
+    const float ACCELERATION    = 10.0f; // Speed gain per second
+    const float DECELERATION    = 15.0f; // Speed loss per second (friction)
+    
+    const float MAX_TURN_SPEED  = 70.0f;// Max degrees per second
+    const float TURN_ACCEL      = 600.0f;// Turn speed gain per second
+    const float TURN_DECEL      = 600.0f;// Turn speed loss per second
+
+    // Current Physics State
+    float currentSpeed = 0.0f;
+    float currentTurnSpeed = 0.0f;
+
+    /*=========================================================
     MAIN LOOP
     =========================================================*/
     u32 then = device->getTimer()->getTime();
-    
-    // Configuration
-    const float MOVEMENT_SPEED = 4.0f;   
-    const float TURN_SPEED = 90.0f;     
 
     while (device->run()) {
         if (receiver.IsKeyDown(KEY_ESCAPE)) break;
@@ -166,31 +160,74 @@ int main() {
         if (device->isWindowActive()) {
             
             // --- 1. HANDLE ROTATION (A/D) ---
+            bool isTurning = false;
+            
             if (receiver.IsKeyDown(KEY_KEY_A)) {
-                playerAngle -= TURN_SPEED * deltaTime;
+                currentTurnSpeed -= TURN_ACCEL * deltaTime;
+                isTurning = true;
             }
             if (receiver.IsKeyDown(KEY_KEY_D)) {
-                playerAngle += TURN_SPEED * deltaTime;
+                currentTurnSpeed += TURN_ACCEL * deltaTime;
+                isTurning = true;
             }
+
+            // Apply Turn Deceleration if no key pressed
+            if (!isTurning) {
+                if (currentTurnSpeed > 0) {
+                    currentTurnSpeed -= TURN_DECEL * deltaTime;
+                    if (currentTurnSpeed < 0) currentTurnSpeed = 0;
+                }
+                else if (currentTurnSpeed < 0) {
+                    currentTurnSpeed += TURN_DECEL * deltaTime;
+                    if (currentTurnSpeed > 0) currentTurnSpeed = 0;
+                }
+            }
+
+            // Clamp Turn Speed
+            if (currentTurnSpeed > MAX_TURN_SPEED) currentTurnSpeed = MAX_TURN_SPEED;
+            if (currentTurnSpeed < -MAX_TURN_SPEED) currentTurnSpeed = -MAX_TURN_SPEED;
+
+            // Apply Rotation
+            playerAngle += currentTurnSpeed * deltaTime;
+
 
             // --- 2. HANDLE MOVEMENT (W/S) ---
-            float angleRad = playerAngle * core::DEGTORAD;
-            vector3df forwardVec(sin(angleRad), 0, cos(angleRad)); 
-            
-            vector3df proposedMove(0,0,0);
-            bool isMoving = false;
+            bool isMovingInput = false;
 
             if (receiver.IsKeyDown(KEY_KEY_W)) {
-                proposedMove += forwardVec * MOVEMENT_SPEED * deltaTime;
-                isMoving = true;
+                currentSpeed += ACCELERATION * deltaTime;
+                isMovingInput = true;
             }
             if (receiver.IsKeyDown(KEY_KEY_S)) {
-                proposedMove -= forwardVec * MOVEMENT_SPEED * deltaTime;
-                isMoving = true;
+                currentSpeed -= ACCELERATION * deltaTime;
+                isMovingInput = true;
             }
 
+            // Apply Movement Deceleration (Friction) if no key pressed
+            if (!isMovingInput) {
+                if (currentSpeed > 0) {
+                    currentSpeed -= DECELERATION * deltaTime;
+                    if (currentSpeed < 0) currentSpeed = 0;
+                }
+                else if (currentSpeed < 0) {
+                    currentSpeed += DECELERATION * deltaTime;
+                    if (currentSpeed > 0) currentSpeed = 0;
+                }
+            }
+
+            // Clamp Move Speed
+            if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
+            if (currentSpeed < -MAX_SPEED) currentSpeed = -MAX_SPEED; // Slower backward? Optional.
+
+
             // --- 3. APPLY PHYSICS & NAVMESH CLAMP ---
-            if (isMoving) {
+            // Only calculate navmesh collision if we are actually moving
+            if (abs(currentSpeed) > 0.001f) {
+                float angleRad = playerAngle * core::DEGTORAD;
+                vector3df forwardVec(sin(angleRad), 0, cos(angleRad)); 
+
+                vector3df proposedMove = forwardVec * currentSpeed * deltaTime;
+                
                 vector3df currentPos = playerNode->getPosition();
                 vector3df targetPos = currentPos + proposedMove;
 
@@ -204,11 +241,12 @@ int main() {
             camPos.Y += eyeHeight;
             camera->setPosition(camPos);
 
+            float angleRad = playerAngle * core::DEGTORAD;
             vector3df lookDir(sin(angleRad), 0, cos(angleRad)); 
             camera->setTarget(camPos + lookDir);
         }
 
-        driver->beginScene(true, true, SColor(255, 0, 0, 0)); // Black background
+        driver->beginScene(true, true, SColor(255, 0, 0, 0));
         smgr->drawAll();
         driver->endScene();
     }
