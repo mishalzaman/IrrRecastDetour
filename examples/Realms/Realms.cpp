@@ -21,8 +21,46 @@ using namespace gui;
 #pragma comment(lib, "Irrlicht.lib")
 #endif
 
-const u32 windowWidth = Config::WINDOW_WIDTH;
-const u32 windowHeight = Config::WINDOW_HEIGHT;
+// Framebuffer Dimensions (4:3 Ratio)
+const u32 FB_WIDTH = 640;
+const u32 FB_HEIGHT = 480;
+
+// ---------------------------------------------------------------------------
+// 1. BASE SHADERS (GLSL)
+// ---------------------------------------------------------------------------
+const c8* VERTEX_SHADER = R"(
+void main()
+{
+    gl_Position = ftransform();
+    gl_TexCoord[0] = gl_MultiTexCoord0;
+}
+)";
+
+const c8* FRAGMENT_SHADER = R"(
+uniform sampler2D RTT;
+
+void main()
+{
+    vec2 uv = gl_TexCoord[0].xy;
+    vec4 color = texture2D(RTT, uv);
+    gl_FragColor = color;
+}
+)";
+
+// ---------------------------------------------------------------------------
+// 2. SHADER CALLBACK
+// ---------------------------------------------------------------------------
+class ShaderCallBack : public video::IShaderConstantSetCallBack
+{
+public:
+    virtual void OnSetConstants(video::IMaterialRendererServices* services, s32 userData)
+    {
+        // Set the Texture Sampler to index 0 (First texture layer)
+        s32 TextureLayerID = 0;
+        services->setPixelShaderConstant("RTT", &TextureLayerID, 1);
+    }
+};
+
 
 int main() {
     /*=========================================================
@@ -33,7 +71,7 @@ int main() {
     // 1. Get Desktop Resolution
     IrrlichtDevice* nullDevice = createDevice(video::EDT_NULL);
     dimension2d<u32> deskRes = nullDevice->getVideoModeList()->getDesktopResolution();
-    deskRes.Height = (deskRes.Width/4)*3; // Use 4:3 ratio
+    deskRes.Height = (deskRes.Width/4)*3; // Force 4:3 Ratio
     nullDevice->drop();
 
     // 2. Create Real Device
@@ -130,18 +168,63 @@ int main() {
     f32 eyeHeight = 1.2f;
 
     /*=========================================================
+    FRAMEBUFFER & SHADER SETUP
+    =========================================================*/
+    
+    // 1. Create Render Target Texture (320x240)
+    ITexture* rtt = driver->addRenderTargetTexture(
+        dimension2d<u32>(FB_WIDTH, FB_HEIGHT), 
+        "RTT_Base"
+    );
+
+    // 2. Compile Shader Material
+    video::IGPUProgrammingServices* gpu = driver->getGPUProgrammingServices();
+    s32 shaderMaterialType = 0;
+
+    if (gpu) {
+        ShaderCallBack* mc = new ShaderCallBack();
+        
+        shaderMaterialType = gpu->addHighLevelShaderMaterial(
+            VERTEX_SHADER, "main", video::EVST_VS_1_1,
+            FRAGMENT_SHADER, "main", video::EPST_PS_1_1,
+            mc, video::EMT_SOLID, 0);
+
+        mc->drop();
+    }
+
+    // 3. Create Screen Quad Geometry
+    // V coordinates are flipped (0.0 at top) to fix upside-down RTT issue
+    S3DVertex quadVertices[4];
+    quadVertices[0] = S3DVertex(-1.0f, -1.0f, 0.0f, 0,0,1, SColor(255,255,255,255), 0.0f, 0.0f); 
+    quadVertices[1] = S3DVertex(-1.0f,  1.0f, 0.0f, 0,0,1, SColor(255,255,255,255), 0.0f, 1.0f); 
+    quadVertices[2] = S3DVertex( 1.0f,  1.0f, 0.0f, 0,0,1, SColor(255,255,255,255), 1.0f, 1.0f); 
+    quadVertices[3] = S3DVertex( 1.0f, -1.0f, 0.0f, 0,0,1, SColor(255,255,255,255), 1.0f, 0.0f); 
+    
+    u16 quadIndices[] = { 0, 1, 2, 0, 2, 3 };
+
+    // 4. Set Material Properties
+    SMaterial quadMaterial;
+    quadMaterial.MaterialType = (video::E_MATERIAL_TYPE)shaderMaterialType;
+    quadMaterial.TextureLayer[0].Texture = rtt;
+    // Disable filtering to keep sharp pixels when scaling up
+    quadMaterial.TextureLayer[0].BilinearFilter = false; 
+    quadMaterial.TextureLayer[0].TrilinearFilter = false;
+    quadMaterial.TextureLayer[0].AnisotropicFilter = 0;
+    quadMaterial.TextureLayer[0].TextureWrapU = video::ETC_CLAMP_TO_EDGE;
+    quadMaterial.TextureLayer[0].TextureWrapV = video::ETC_CLAMP_TO_EDGE;
+    quadMaterial.Lighting = false;
+
+    /*=========================================================
     MOVEMENT PHYSICS VARIABLES
     =========================================================*/
-    // Settings
-    const float MAX_SPEED       = 2.0f;  // Max units per second
-    const float ACCELERATION    = 10.0f; // Speed gain per second
-    const float DECELERATION    = 15.0f; // Speed loss per second (friction)
+    const float MAX_SPEED       = 2.0f;  
+    const float ACCELERATION    = 10.0f; 
+    const float DECELERATION    = 15.0f; 
     
-    const float MAX_TURN_SPEED  = 70.0f;// Max degrees per second
-    const float TURN_ACCEL      = 600.0f;// Turn speed gain per second
-    const float TURN_DECEL      = 600.0f;// Turn speed loss per second
+    const float MAX_TURN_SPEED  = 90.0f;
+    const float TURN_ACCEL      = 600.0f;
+    const float TURN_DECEL      = 600.0f;
 
-    // Current Physics State
     float currentSpeed = 0.0f;
     float currentTurnSpeed = 0.0f;
 
@@ -159,9 +242,8 @@ int main() {
 
         if (device->isWindowActive()) {
             
-            // --- 1. HANDLE ROTATION (A/D) ---
+            // --- PHYSICS LOGIC (Unchanged) ---
             bool isTurning = false;
-            
             if (receiver.IsKeyDown(KEY_KEY_A)) {
                 currentTurnSpeed -= TURN_ACCEL * deltaTime;
                 isTurning = true;
@@ -170,8 +252,6 @@ int main() {
                 currentTurnSpeed += TURN_ACCEL * deltaTime;
                 isTurning = true;
             }
-
-            // Apply Turn Deceleration if no key pressed
             if (!isTurning) {
                 if (currentTurnSpeed > 0) {
                     currentTurnSpeed -= TURN_DECEL * deltaTime;
@@ -182,18 +262,11 @@ int main() {
                     if (currentTurnSpeed > 0) currentTurnSpeed = 0;
                 }
             }
-
-            // Clamp Turn Speed
             if (currentTurnSpeed > MAX_TURN_SPEED) currentTurnSpeed = MAX_TURN_SPEED;
             if (currentTurnSpeed < -MAX_TURN_SPEED) currentTurnSpeed = -MAX_TURN_SPEED;
-
-            // Apply Rotation
             playerAngle += currentTurnSpeed * deltaTime;
 
-
-            // --- 2. HANDLE MOVEMENT (W/S) ---
             bool isMovingInput = false;
-
             if (receiver.IsKeyDown(KEY_KEY_W)) {
                 currentSpeed += ACCELERATION * deltaTime;
                 isMovingInput = true;
@@ -202,8 +275,6 @@ int main() {
                 currentSpeed -= ACCELERATION * deltaTime;
                 isMovingInput = true;
             }
-
-            // Apply Movement Deceleration (Friction) if no key pressed
             if (!isMovingInput) {
                 if (currentSpeed > 0) {
                     currentSpeed -= DECELERATION * deltaTime;
@@ -214,40 +285,45 @@ int main() {
                     if (currentSpeed > 0) currentSpeed = 0;
                 }
             }
-
-            // Clamp Move Speed
             if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
-            if (currentSpeed < -MAX_SPEED) currentSpeed = -MAX_SPEED; // Slower backward? Optional.
+            if (currentSpeed < -MAX_SPEED) currentSpeed = -MAX_SPEED;
 
-
-            // --- 3. APPLY PHYSICS & NAVMESH CLAMP ---
-            // Only calculate navmesh collision if we are actually moving
             if (abs(currentSpeed) > 0.001f) {
                 float angleRad = playerAngle * core::DEGTORAD;
                 vector3df forwardVec(sin(angleRad), 0, cos(angleRad)); 
-
                 vector3df proposedMove = forwardVec * currentSpeed * deltaTime;
-                
                 vector3df currentPos = playerNode->getPosition();
                 vector3df targetPos = currentPos + proposedMove;
-
-                // Check navmesh bounds
                 vector3df clampedPos = navMesh->getClosestPointOnNavmesh(targetPos);
                 playerNode->setPosition(clampedPos);
             }
 
-            // --- 4. UPDATE CAMERA ---
             vector3df camPos = playerNode->getPosition();
             camPos.Y += eyeHeight;
             camera->setPosition(camPos);
-
             float angleRad = playerAngle * core::DEGTORAD;
             vector3df lookDir(sin(angleRad), 0, cos(angleRad)); 
             camera->setTarget(camPos + lookDir);
         }
 
-        driver->beginScene(true, true, SColor(255, 0, 0, 0));
-        smgr->drawAll();
+        /*=========================================================
+        RENDER PIPELINE
+        =========================================================*/
+        
+        // PASS 1: Render Scene to Low-Res Texture (320x240)
+        driver->setRenderTarget(rtt, true, true, SColor(255, 0, 0, 0));
+        smgr->drawAll(); 
+
+        // PASS 2: Render Texture to Screen using Shader
+        driver->setRenderTarget(0, true, true, SColor(255, 0, 0, 0));
+        
+        driver->setMaterial(quadMaterial);
+        driver->setTransform(video::ETS_WORLD, core::matrix4());
+        driver->setTransform(video::ETS_VIEW, core::matrix4());
+        driver->setTransform(video::ETS_PROJECTION, core::matrix4());
+        
+        driver->drawVertexPrimitiveList(quadVertices, 4, quadIndices, 2, video::EVT_STANDARD, scene::EPT_TRIANGLES, video::EIT_16BIT);
+
         driver->endScene();
     }
 
