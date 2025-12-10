@@ -34,6 +34,7 @@ int main() {
     // We create a temporary NULL device to query the desktop's current resolution.
     IrrlichtDevice* nullDevice = createDevice(video::EDT_NULL);
     dimension2d<u32> deskRes = nullDevice->getVideoModeList()->getDesktopResolution();
+    deskRes.Height = (deskRes.Width/4)*3; // Use 4:3 ratio
     nullDevice->drop();
 
     // 2. Create Real Device with Desktop Resolution
