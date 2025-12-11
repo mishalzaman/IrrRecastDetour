@@ -95,6 +95,9 @@ int main() {
     ISceneManager* smgr = device->getSceneManager();
     smgr->setAmbientLight(SColorf(0.3f, 0.3f, 0.3f, 1.0f));
 
+    // Disable all mip-map textures
+    driver->setTextureCreationFlag(irr::video::ETCF_CREATE_MIP_MAPS, false);
+
     /*=========================================================
     NAVMESH & LEVEL SETUP
     =========================================================*/
@@ -109,13 +112,13 @@ int main() {
     if (mapNode) {
         mapNode->setPosition(vector3df(0, 0, 0));
         mapNode->setMaterialFlag(EMF_NORMALIZE_NORMALS, true);
-        
         mapNode->setMaterialFlag(EMF_BILINEAR_FILTER, false);
         mapNode->setMaterialFlag(EMF_TRILINEAR_FILTER, false);
         mapNode->setMaterialFlag(EMF_ANISOTROPIC_FILTER, false);
 
         for (u32 i = 0; i < mapNode->getMaterialCount(); i++) {
             mapNode->getMaterial(i).Lighting = false;
+            mapNode->getMaterial(i).FogEnable = true;
         }
     }
 
