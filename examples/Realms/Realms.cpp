@@ -164,10 +164,12 @@ int main() {
     
     // Initial State
     vector3df playerPos(5, 1, 5);
+    vector3df playerRotation(1, -90, 0);
     playerPos = navMesh->getClosestPointOnNavmesh(playerPos); 
     playerNode->setPosition(playerPos);
+    playerNode->setRotation(playerRotation);
 
-    float playerAngle = 0.0f; 
+    float playerAngle = -90.0f; 
     f32 eyeHeight = 1.2f;
 
     /*=========================================================
