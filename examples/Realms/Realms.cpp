@@ -73,7 +73,7 @@ int main() {
     dimension2d<u32> deskRes = nullDevice->getVideoModeList()->getDesktopResolution();
     deskRes.Height = (deskRes.Width/4)*3; // Force 4:3 Ratio
     nullDevice->drop();
-
+    
     // 2. Create Real Device
     IrrlichtDevice* device = createDevice(
         video::EDT_OPENGL,
@@ -176,6 +176,10 @@ int main() {
     FRAMEBUFFER & SHADER SETUP
     =========================================================*/
     
+    // Framebuffer Dimensions (4:3 Ratio)
+    const u32 FB_WIDTH = deskRes.Width;
+    const u32 FB_HEIGHT = deskRes.Height;
+
     // 1. Create Render Target Texture (320x240)
     ITexture* rtt = driver->addRenderTargetTexture(
         dimension2d<u32>(FB_WIDTH, FB_HEIGHT), 
